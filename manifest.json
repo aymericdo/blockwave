@@ -1,0 +1,23 @@
+{
+  "manifest_version": 3,
+  "name": "Blockwave",
+  "version": "0.1.0",
+  "description": "Bloque automatiquement une liste de comptes Instagram, un par un.",
+  "permissions": ["activeTab", "storage"],
+  "host_permissions": ["*://*.instagram.com/*", "https://*.supabase.co/*"],
+  "background": {
+    "service_worker": "src/background.js",
+    "type": "module"
+  },
+  "action": {
+    "default_popup": "src/popup.html",
+    "default_title": "Blockwave"
+  },
+  "content_scripts": [
+    {
+      "matches": ["*://*.instagram.com/*"],
+      "js": ["src/content.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}

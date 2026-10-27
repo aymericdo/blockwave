@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Blockwave — proposer un compte</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <header class="head">
+        <div class="mark" aria-hidden="true"></div>
+        <div>
+          <h1>Blockwave</h1>
+          <p class="tagline">La liste partagée des comptes à bloquer sur Instagram.</p>
+        </div>
+      </header>
+
+      <div id="warning" class="warning" hidden></div>
+
+      <section class="card">
+        <h2>Proposer un compte</h2>
+        <p class="hint">
+          Colle un pseudo ou l'URL d'un profil. Chaque proposition est relue avant
+          d'être publiée.
+        </p>
+
+        <form id="form" novalidate>
+          <label for="handle">Compte Instagram</label>
+          <input
+            id="handle"
+            type="text"
+            placeholder="@pseudo ou https://instagram.com/pseudo"
+            autocomplete="off"
+            spellcheck="false"
+          />
+
+          <label for="reason">
+            Pourquoi ? <span class="opt">(optionnel, visible publiquement)</span>
+          </label>
+          <textarea
+            id="reason"
+            rows="3"
+            maxlength="280"
+            placeholder="Ex. relais de désinformation, appels à la haine…"
+          ></textarea>
+
+          <div class="hp" aria-hidden="true">
+            <label for="website">Site web</label>
+            <input id="website" type="text" tabindex="-1" autocomplete="off" />
+          </div>
+
+          <button type="submit" class="primary" id="submit">Proposer</button>
+        </form>
+
+        <p id="error" class="error" hidden></p>
+        <p id="success" class="success" hidden></p>
+      </section>
+
+      <section class="card">
+        <h2>Déjà sur la liste <span class="count" id="count"></span></h2>
+        <ul class="chips" id="approved"></ul>
+      </section>
+    </main>
+
+    <script type="module" src="submit.js"></script>
+  </body>
+</html>
