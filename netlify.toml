@@ -1,0 +1,14 @@
+# Netlify — console de modération Blockwave.
+#
+# Le site GitHub Pages (racine du dépôt) ne sert que le formulaire public ;
+# la console vit dans admin/ et est construite ici. Le déploiement n'a besoin
+# d'aucune variable d'environnement : la configuration Supabase est publique
+# et lue depuis config.js à la racine.
+
+[build]
+  base = "admin"
+  command = "npm run build"
+  publish = "dist"
+
+[build.environment]
+  NODE_VERSION = "22"

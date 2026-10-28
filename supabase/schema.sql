@@ -172,7 +172,7 @@ create trigger blockwave_throttle
 -- ----------------------------------------------------------------------------
 -- 6. Toi, administrateur
 --
--- ⚠️ À faire APRÈS t'être connecté une première fois à web/admin.html
+-- ⚠️ À faire APRÈS t'être connecté une première fois à la console de modération
 --    (le clic sur le lien magique crée la ligne dans auth.users).
 --    Décommente, remplace l'e-mail, puis exécute.
 -- ----------------------------------------------------------------------------

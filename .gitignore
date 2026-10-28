@@ -2,3 +2,7 @@
 
 # Artefact de build : généré par ./scripts/package.sh, jamais versionné.
 *.zip
+
+# Console de modération (admin/) : dépendances et build Vite.
+node_modules/
+admin/dist/

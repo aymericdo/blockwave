@@ -5,7 +5,7 @@
 #   ./scripts/package.sh
 #
 # Sortie : blockwave-<version>.zip à la racine du dépôt, où <version> est lue
-# dans manifest.json. Le contenu est volontairement restreint : web/,
+# dans manifest.json. Le contenu est volontairement restreint : web/, admin/,
 # supabase/, scripts/ et assets/ ne doivent pas partir, un relecteur du store
 # y verrait un import vers esm.sh et conclurait à du code distant.
 

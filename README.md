@@ -11,7 +11,7 @@ récupèrent la liste à jour toute seules.
 ```
   visiteur ──▶ web/index.html ──▶ table accounts (status = 'pending')
                                              │
-                            toi ──▶ web/admin.html ──▶ 'approved'
+                toi ──▶ admin/ (Netlify) ──▶ 'approved'
                                              │
                             extension ──◀────┘  (lecture seule + cache 6 h)
 ```
@@ -29,10 +29,11 @@ récupèrent la liste à jour toute seules.
 
 ## Publication
 
-Le store ne doit recevoir que le strict nécessaire. Le dossier `web/` (formulaire
-et console, hébergés sur GitHub Pages), `supabase/`, `scripts/` et `assets/` ne
-doivent **pas** partir : un relecteur y verrait un `import` vers `esm.sh` dans
-`web/admin.js` et conclurait à du code distant.
+Le store ne doit recevoir que le strict nécessaire. Les dossiers `web/`
+(formulaire public, hébergé sur GitHub Pages), `admin/` (console, hébergée sur
+Netlify), `supabase/`, `scripts/` et `assets/` ne doivent **pas** partir : un
+relecteur y verrait un `import` vers `esm.sh` dans `web/submit.js` et
+conclurait à du code distant.
 
 ```bash
 ./scripts/package.sh
@@ -72,7 +73,7 @@ Le champ sous la ligne d'en-tête accepte un `@pseudo` ou une URL de profil ;
 | Action | Effet |
 | --- | --- |
 | **Ajouter** (`+`) | Le compte entre dans **ta** liste locale (`chrome.storage`), sans validation, et il est traité en premier au prochain lancement. |
-| *(automatique)* | Une ligne `pending` est envoyée dans Supabase : le compte rejoint la liste partagée après validation depuis `web/admin.html`. |
+| *(automatique)* | Une ligne `pending` est envoyée dans Supabase : le compte rejoint la liste partagée après validation depuis la console de modération. |
 
 Les comptes ajoutés à la main portent une pastille rouge et un `×` pour les
 retirer. Ils sont stockés à part de la liste partagée : un `Réinitialiser` ne
@@ -97,6 +98,30 @@ blocage se faire. À la fin, l'onglet revient sur le fil d'accueil.
 Le popup peut être fermé pendant l'exécution : l'orchestration tourne dans le
 service worker et l'état est conservé. Rouvre le popup pour voir l'avancement.
 
+## Console de modération
+
+`admin/` est une application Vite + React + Tailwind, déployée sur Netlify. Elle
+remplace l'ancienne page statique `web/admin.html`, qui chargeait
+`@supabase/supabase-js` depuis `https://esm.sh` : ce seul `import` déclenchait
+**15 requêtes** (~4,9 s de latence cumulée) avant le premier rendu utile. Le
+paquet est désormais empaqueté dans le bundle et servi depuis le même domaine.
+
+```bash
+cd admin
+npm install
+npm run dev      # http://localhost:5173
+npm run build    # typecheck + build dans admin/dist
+```
+
+Déploiement : Netlify lit `netlify.toml` à la racine (`base = "admin"`,
+`publish = "dist"`, `command = "npm run build"`). Aucune variable
+d'environnement à renseigner — la configuration Supabase vient de `config.js`,
+à la racine du dépôt, partagée avec l'extension.
+
+> Après le premier déploiement, ajoute l'URL Netlify dans **Supabase →
+> Authentication → URL Configuration** (`Site URL` et `Redirect URLs`), sinon le
+> lien magique renverra vers l'ancien domaine GitHub Pages.
+
 ## Liste collaborative
 
 ### Mise en place, une seule fois
@@ -108,19 +133,22 @@ service worker et l'état est conservé. Rouvre le popup pour voir l'avancement.
 3. **Settings → API** : copier `Project URL` et la clé `anon public` dans
    `config.js` (racine du dépôt).
 4. **Authentication → URL Configuration** :
-   - `Site URL` = `https://<ton-pseudo>.github.io/blockwave/`
-   - `Redirect URLs` += `https://<ton-pseudo>.github.io/blockwave/web/admin.html`
-   - idem en `http://localhost:8000/web/admin.html` si tu testes en local.
+   - `Site URL` = `https://<ton-site>.netlify.app/` — l'origine de la console
+   - `Redirect URLs` += `https://<ton-site>.netlify.app/`
+   - idem en `http://localhost:5173/` pour le développement local.
 5. **Settings → Pages** : source = branche `main`, dossier `/ (root)`.
-   Les pages sont alors sur `/web/index.html` et `/web/admin.html`.
-6. Ouvrir `/web/admin.html`, saisir ton e-mail, cliquer sur le lien reçu. Le
-   compte existe maintenant dans `auth.users`.
+   Le formulaire public est alors sur `/web/index.html`.
+6. Déployer la console sur Netlify (voir « Console de modération » ci-dessous),
+   l'ouvrir et saisir ton e-mail : le clic sur le lien crée la ligne dans
+   `auth.users`.
 7. Retour au SQL Editor : décommenter la section **6** de `schema.sql`, y
    remplacer l'e-mail, **Run**. Tu es administrateur.
-8. Recharger `admin.html` : la file d'attente s'affiche.
+8. Recharger la console : la file d'attente s'affiche.
 
-> Les pages utilisent des modules ES : `file://` ne fonctionne pas. Pour tester
-> en local, sers le dossier (`python3 -m http.server`) et utilise `localhost`.
+> La console tourne sous Vite : `cd admin && npm install && npm run dev`, puis
+> `http://localhost:5173`. Le formulaire public, lui, utilise des modules ES
+> natifs — `file://` ne fonctionne pas, sers `web/` avec
+> `python3 -m http.server`.
 
 ### Modération
 
@@ -192,8 +220,8 @@ source de vérité reste la table `accounts`, pas le code de l'extension.
 | `supabase/schema.sql` | Table, contraintes, RLS, trigger anti-spam, amorçage |
 | `supabase/seed.sql` | Liste de départ (52 comptes), réexécutable |
 | `supabase/migrations/` | Ajouts incrémentaux à appliquer sur une base déjà en service |
-| `web/index.html` + `submit.js` | Formulaire public de proposition |
-| `web/admin.html` + `admin.js` | Console de modération (lien magique) |
+| `web/index.html` + `submit.js` | Formulaire public de proposition (GitHub Pages) |
+| `admin/` | Console de modération React + Tailwind (Netlify), sources et build Vite |
 | `src/background.js` | Orchestrateur : récupère la liste, navigue profil par profil, gère l'état et le rythme |
 | `src/content.js` | Script injecté sur instagram.com : trouve le bouton « Options », clique « Bloquer », confirme, vérifie |
 | `src/popup.html/.css/.js` | Interface : lancement, provenance de la liste, suivi compte par compte |
