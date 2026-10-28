@@ -20,8 +20,24 @@
 
     <div class="meta">
       <span id="source">liste…</span>
-      <button id="refresh" class="link" type="button">Actualiser</button>
+      <span class="meta-actions">
+        <button id="recheck" class="link" type="button" hidden>Revérifier</button>
+        <button id="refresh" class="link" type="button">Actualiser</button>
+      </span>
     </div>
+
+    <form id="add-form" class="add" autocomplete="off">
+      <input
+        id="add-input"
+        type="text"
+        placeholder="@pseudo ou URL du profil"
+        spellcheck="false"
+        aria-label="Compte à ajouter"
+      />
+      <button id="add-submit" type="submit" class="add-btn" aria-label="Ajouter">+</button>
+    </form>
+
+    <p id="add-message" class="add-message" hidden></p>
 
     <button id="reset" class="ghost" hidden>Réinitialiser</button>
 

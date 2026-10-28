@@ -94,6 +94,12 @@ button:disabled {
   white-space: nowrap;
 }
 
+.meta-actions {
+  display: flex;
+  gap: 10px;
+  flex: none;
+}
+
 .link {
   flex: none;
   width: auto;
@@ -113,6 +119,69 @@ button:disabled {
 .link:disabled {
   color: var(--muted);
   cursor: default;
+}
+
+/* ---------- ajout manuel ---------- */
+
+.add {
+  display: flex;
+  gap: 6px;
+  margin-top: 12px;
+}
+
+.add input {
+  flex: 1;
+  min-width: 0;
+  padding: 9px 11px;
+  border-radius: 9px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 12.5px;
+}
+
+.add input::placeholder {
+  color: var(--muted);
+}
+
+.add input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.add-btn {
+  flex: none;
+  width: 36px;
+  padding: 0;
+  border-radius: 9px;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  color: var(--text);
+  font-size: 18px;
+  font-weight: 400;
+  line-height: 1;
+}
+
+.add-btn:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.add-message {
+  margin: 8px 0 0;
+  padding: 7px 9px;
+  border-radius: 8px;
+  font-size: 11px;
+  background: rgba(46, 204, 113, 0.1);
+  border: 1px solid rgba(46, 204, 113, 0.3);
+  color: #8ce6b0;
+}
+
+.add-message[data-error='true'] {
+  background: rgba(239, 83, 80, 0.1);
+  border-color: rgba(239, 83, 80, 0.35);
+  color: #ffb3b3;
 }
 
 .ghost {
@@ -145,7 +214,7 @@ button:disabled {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  max-height: 240px;
+  max-height: 190px;
   overflow-y: auto;
 }
 
@@ -166,10 +235,50 @@ button:disabled {
 }
 
 .item-name {
+  flex: 1;
+  min-width: 0;
   font-size: 12px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* pastille rouge : compte ajouté à la main, pas encore dans la liste partagée */
+.item-name[data-local='true']::before {
+  content: '';
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  margin-right: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  vertical-align: middle;
+}
+
+.item-right {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex: none;
+}
+
+.remove {
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border-radius: 50%;
+  background: transparent;
+  border: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.remove:hover {
+  border-color: var(--err);
+  color: var(--err);
 }
 
 .pill {
@@ -209,6 +318,15 @@ button:disabled {
 
 [data-state='skipped'] .pill {
   background: rgba(143, 143, 163, 0.12);
+  color: var(--muted);
+}
+
+[data-state='done'] .pill {
+  background: rgba(143, 143, 163, 0.1);
+  color: var(--muted);
+}
+
+[data-state='done'] .item-name {
   color: var(--muted);
 }
 

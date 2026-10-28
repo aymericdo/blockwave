@@ -14,18 +14,38 @@ import { normalizeHandle } from '../handles.js';
 const HOME_URL = 'https://www.instagram.com/';
 const STORAGE_KEY = 'blockwave:run';
 const POOL_KEY = 'blockwave:pool';
+const LOCAL_KEY = 'blockwave:local';
+const DONE_KEY = 'blockwave:done';
 
 /**
  * Liste de secours : utilisée seulement si Supabase est injoignable ET qu'aucun
  * cache n'existe. En temps normal la liste vient de la table `accounts`.
+ * Source de vérité pour l'amorçage : `supabase/seed.sql`.
  */
 const FALLBACK_ACCOUNTS = [
-  'jordanbardella',
-  'marine_lepen',
-  'edwige_diaz',
   'ericzemmour_',
-  'sarahknafo1',
+  'edwige_diaz',
+  'marine_lepen',
+  'vincentfou12',
+  'auroreberge.fr',
+  'voxpopuli988',
+  'va_plus',
+  'jordanflorentin_',
+  'lucasfourcadeoffi',
+  'alice_cordier_',
+  'yona.faedda',
+  'vincent.lapierre',
+  'hugonemesisdeux',
   'tanguyjeanphilippe',
+  'julien_odoul',
+  'collectif.nemesis',
+  'sarahknafo1',
+  'frontieresmedia',
+  'jordanbardella',
+  'cnews',
+  'mc_pao',
+  'le___carlito',
+  'impact33news',
 ];
 
 const LABELS = {
@@ -37,18 +57,19 @@ const LABELS = {
   login: 'session expirée',
   error: 'échec',
   skipped: 'ignoré',
+  done: 'déjà traité',
 };
 
 /* Rythme du bot. Valeurs en millisecondes, tirées au hasard entre les bornes.
  * Augmente-les si tu veux quelque chose de (encore) plus lent et discret. */
 const PACING = {
   /** Temps laissé à la page après le chargement avant de lancer le script. */
-  pageSettle: [1200, 2300],
+  pageSettle: [600, 1200],
   /** Pause normale entre deux profils. */
-  betweenProfiles: [2500, 5500],
+  betweenProfiles: [800, 2000],
   /** De temps en temps, une pause plus longue, comme quelqu'un qui s'interrompt. */
-  longPauseChance: 0.2,
-  longPause: [8000, 14000],
+  longPauseChance: 0.15,
+  longPause: [4000, 7000],
 };
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -78,6 +99,41 @@ async function readPoolCache() {
   return data[POOL_KEY] ?? null;
 }
 
+/** Comptes ajoutés depuis le popup. Ils n'attendent aucune validation. */
+async function readLocal() {
+  const data = await chrome.storage.local.get(LOCAL_KEY);
+  return Array.isArray(data[LOCAL_KEY]) ? data[LOCAL_KEY] : [];
+}
+
+async function writeLocal(usernames) {
+  await chrome.storage.local.set({ [LOCAL_KEY]: usernames });
+  return usernames;
+}
+
+/**
+ * Registre des comptes déjà traités : { pseudo: timestamp }.
+ * Évite de rouvrir un profil qu'on a déjà bloqué lors d'une exécution
+ * précédente — c'est le principal gain de temps sur les relances.
+ */
+async function readDone() {
+  const data = await chrome.storage.local.get(DONE_KEY);
+  const value = data[DONE_KEY];
+  return value && typeof value === 'object' ? value : {};
+}
+
+async function markDone(username) {
+  const done = await readDone();
+  if (done[username]) return done;
+
+  done[username] = Date.now();
+  await chrome.storage.local.set({ [DONE_KEY]: done });
+  return done;
+}
+
+async function clearDone() {
+  await chrome.storage.local.set({ [DONE_KEY]: {} });
+}
+
 /** Interroge Supabase. La RLS ne renvoie de toute façon que les approuvés. */
 async function fetchRemotePool() {
   if (!CONFIG.supabaseUrl || !CONFIG.supabaseAnonKey) return null;
@@ -103,11 +159,11 @@ async function fetchRemotePool() {
 }
 
 /**
- * Quatre niveaux de repli, du plus frais au plus dégradé :
- *   cache frais → réseau → cache périmé → liste de secours.
+ * Résout la liste distante. Quatre niveaux de repli, du plus frais au plus
+ * dégradé : cache frais → réseau → cache périmé → liste de secours.
  * L'extension doit rester utilisable même si Supabase est tombé.
  */
-async function getPool({ force = false } = {}) {
+async function resolveRemote({ force = false } = {}) {
   const ttl = CONFIG.listTtlMs ?? 6 * 60 * 60 * 1000;
   const cached = await readPoolCache();
 
@@ -133,9 +189,36 @@ async function getPool({ force = false } = {}) {
   return { usernames: FALLBACK_ACCOUNTS, origin: 'fallback', fetchedAt: null };
 }
 
+/**
+ * Liste finale = ajouts locaux d'abord, puis liste partagée.
+ * Les ajouts manuels passent devant : c'est ce que l'utilisateur vient de
+ * demander, il veut le voir traité en premier.
+ */
+async function getPool(options) {
+  const [local, remote, done] = await Promise.all([
+    readLocal(),
+    resolveRemote(options),
+    readDone(),
+  ]);
+
+  return { ...remote, local, done };
+}
+
 function buildRun(pool) {
   const max = CONFIG.maxPerRun ?? 250;
-  const planned = pool.usernames.slice(0, max);
+  const local = pool.local ?? [];
+  const done = pool.done ?? {};
+  const localSet = new Set(local);
+  const merged = [...new Set([...local, ...pool.usernames])];
+  const planned = merged.slice(0, max);
+
+  const accounts = planned.map((username) => ({
+    username,
+    url: `https://www.instagram.com/${username}/`,
+    state: done[username] ? 'done' : 'pending',
+    detail: done[username] ? 'Déjà bloqué par Blockwave.' : '',
+    local: localSet.has(username),
+  }));
 
   return {
     running: false,
@@ -146,15 +229,12 @@ function buildRun(pool) {
     source: {
       origin: pool.origin,
       fetchedAt: pool.fetchedAt,
-      total: pool.usernames.length,
+      total: merged.length,
       planned: planned.length,
+      local: accounts.filter((account) => account.local).length,
+      done: accounts.filter((account) => account.state === 'done').length,
     },
-    accounts: planned.map((username) => ({
-      username,
-      url: `https://www.instagram.com/${username}/`,
-      state: 'pending',
-      detail: '',
-    })),
+    accounts,
   };
 }
 
@@ -175,13 +255,92 @@ async function update(mutator) {
 }
 
 /* ------------------------------------------------------------------ */
+/* Ajout / retrait depuis le popup                                    */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Envoie une proposition à la liste partagée. Elle part forcément en
+ * `pending` : la politique RLS d'insertion refuse tout autre statut.
+ */
+async function submitSuggestion(handle) {
+  if (!CONFIG.supabaseUrl || !CONFIG.supabaseAnonKey) {
+    return { shared: false, reason: 'Supabase non configuré' };
+  }
+
+  const base = CONFIG.supabaseUrl.replace(/\/+$/, '');
+
+  try {
+    const response = await fetch(`${base}/rest/v1/accounts`, {
+      method: 'POST',
+      headers: {
+        apikey: CONFIG.supabaseAnonKey,
+        Authorization: `Bearer ${CONFIG.supabaseAnonKey}`,
+        'Content-Type': 'application/json',
+        Prefer: 'return=minimal',
+      },
+      body: JSON.stringify({ username: handle, status: 'pending' }),
+    });
+
+    if (response.status === 409) return { shared: true, duplicate: true };
+
+    if (!response.ok) {
+      let reason = `HTTP ${response.status}`;
+      try {
+        const body = await response.json();
+        reason = body.message || reason;
+      } catch {
+        /* corps non JSON, on garde le code HTTP */
+      }
+      return { shared: false, reason };
+    }
+
+    return { shared: true };
+  } catch (error) {
+    return { shared: false, reason: String(error?.message || error) };
+  }
+}
+
+async function addAccount(username) {
+  const handle = normalizeHandle(username);
+  if (!handle) return { ok: false, error: 'invalid' };
+
+  const local = await readLocal();
+  const existed = local.includes(handle);
+
+  if (!existed) {
+    await writeLocal([handle, ...local]);
+  }
+
+  // Un compte déjà ajouté à la main a déjà été proposé : inutile de refaire
+  // l'appel réseau et de se heurter au conflit d'unicité.
+  const shareResult = existed ? null : await submitSuggestion(handle);
+
+  if (!active) await writeRun(buildRun(await getPool()));
+
+  return { ok: true, duplicate: existed, share: shareResult, run: await readRun() };
+}
+
+async function removeAccount(username) {
+  const handle = normalizeHandle(username);
+  if (!handle) return { ok: false, error: 'invalid' };
+
+  const local = await readLocal();
+  const next = local.filter((item) => item !== handle);
+
+  if (next.length !== local.length) await writeLocal(next);
+  if (!active) await writeRun(buildRun(await getPool()));
+
+  return { ok: true, run: await readRun() };
+}
+
+/* ------------------------------------------------------------------ */
 /* Navigation / messagerie                                            */
 /* ------------------------------------------------------------------ */
 
 async function navigateAndWait(tabId, url, timeout = 45000) {
   await chrome.tabs.update(tabId, { url });
   const startedAt = Date.now();
-  await sleep(800);
+  await sleep(400);
 
   for (;;) {
     if (Date.now() - startedAt > timeout) {
@@ -193,8 +352,8 @@ async function navigateAndWait(tabId, url, timeout = 45000) {
     } catch {
       throw new Error("L'onglet Instagram a été fermé");
     }
-    if (tab.status === 'complete' && Date.now() - startedAt > 1200) return;
-    await sleep(300);
+    if (tab.status === 'complete' && Date.now() - startedAt > 600) return;
+    await sleep(200);
   }
 }
 
@@ -232,6 +391,12 @@ async function start(tabId) {
     return;
   }
 
+  if (!fresh.accounts.some((account) => account.state !== 'done')) {
+    fresh.message = 'Tous les comptes sont déjà traités. Utilise « Revérifier » pour les recontrôler.';
+    await writeRun(fresh);
+    return;
+  }
+
   active = true;
   fresh.running = true;
   fresh.startedAt = Date.now();
@@ -243,6 +408,9 @@ async function start(tabId) {
   try {
     for (let i = 0; i < queue.length; i++) {
       const account = queue[i];
+
+      // Déjà bloqué lors d'une exécution précédente : on ne navigue même pas.
+      if (account.state === 'done') continue;
 
       await update((run) => {
         run.current = i;
@@ -265,6 +433,12 @@ async function start(tabId) {
         run.accounts[i].detail = result.detail || '';
         run.message = `@${account.username} — ${LABELS[result.status] || result.status}`;
       });
+
+      // Le compte est bloqué (par nous ou déjà le cas) : on le mémorise pour
+      // ne plus jamais rouvrir son profil lors des prochaines exécutions.
+      if (result.status === 'blocked' || result.status === 'already') {
+        await markDone(account.username);
+      }
 
       if (result.status === 'login') {
         await update((run) => {
@@ -298,7 +472,12 @@ async function start(tabId) {
       run.finishedAt = Date.now();
       const blocked = run.accounts.filter((a) => a.state === 'blocked').length;
       const already = run.accounts.filter((a) => a.state === 'already').length;
-      run.message = `Terminé — ${blocked} bloqué(s), ${already} déjà bloqué(s).`;
+      const skipped = run.accounts.filter((a) => a.state === 'done').length;
+
+      run.message =
+        `Terminé — ${blocked} bloqué(s), ${already} déjà bloqué(s)` +
+        (skipped ? `, ${skipped} ignoré(s)` : '') +
+        '.';
     });
 
     try {
@@ -320,6 +499,20 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     return false;
   }
 
+  if (message?.type === 'ADD_ACCOUNT') {
+    addAccount(message.username)
+      .then(sendResponse)
+      .catch((error) => sendResponse({ ok: false, error: String(error?.message || error) }));
+    return true;
+  }
+
+  if (message?.type === 'REMOVE_ACCOUNT') {
+    removeAccount(message.username)
+      .then(sendResponse)
+      .catch((error) => sendResponse({ ok: false, error: String(error?.message || error) }));
+    return true;
+  }
+
   if (message?.type === 'GET') {
     readRun().then(sendResponse);
     return true;
@@ -331,6 +524,19 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       return true;
     }
     getPool({ force: true })
+      .then((pool) => writeRun(buildRun(pool)))
+      .then(sendResponse)
+      .catch((error) => sendResponse({ error: String(error?.message || error) }));
+    return true;
+  }
+
+  if (message?.type === 'CLEAR_DONE') {
+    if (active) {
+      sendResponse({ ok: false, reason: 'running' });
+      return false;
+    }
+    clearDone()
+      .then(() => getPool())
       .then((pool) => writeRun(buildRun(pool)))
       .then(sendResponse)
       .catch((error) => sendResponse({ error: String(error?.message || error) }));

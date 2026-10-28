@@ -138,6 +138,13 @@ security definer
 set search_path = public
 as $$
 begin
+  -- Un administrateur n'est jamais throttlé. Sans cette exemption, un attaquant
+  -- peut saturer le quota et empêcher l'ajout de comptes pendant une heure —
+  -- y compris depuis l'extension.
+  if public.is_admin() then
+    return new;
+  end if;
+
   if (
     select count(*) from public.accounts
     where created_at > now() - interval '1 hour'
@@ -154,17 +161,13 @@ create trigger blockwave_throttle
   for each row execute function public.blockwave_throttle();
 
 -- ----------------------------------------------------------------------------
--- 5. Liste de départ (les 6 comptes déjà en dur dans l'extension)
+-- 5. Liste de départ
+--
+--    Volontairement dans un fichier séparé (seed.sql) : il est plus simple de
+--    relancer ce seul fichier pour synchroniser la liste par défaut, sans
+--    redéployer tout le schéma.
+--    → exécuter supabase/seed.sql juste après celui-ci.
 -- ----------------------------------------------------------------------------
-insert into public.accounts (username, status, reviewed_at)
-values
-  ('jordanbardella',     'approved', now()),
-  ('marine_lepen',       'approved', now()),
-  ('edwige_diaz',        'approved', now()),
-  ('ericzemmour_',       'approved', now()),
-  ('sarahknafo1',        'approved', now()),
-  ('tanguyjeanphilippe', 'approved', now())
-on conflict (lower(username)) do nothing;
 
 -- ----------------------------------------------------------------------------
 -- 6. Toi, administrateur

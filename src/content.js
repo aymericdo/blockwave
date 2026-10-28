@@ -17,16 +17,19 @@
     block: /^(bloquer|block)(\s|$)/i,
     blockExact: /^(bloquer|block)$/i,
     unblock: /^(d[ée]bloquer|unblock)(\s|$)/i,
+    /** Libellés du bouton principal du header — sert à savoir si la page est prête. */
+    action:
+      /^(d[ée]bloquer|unblock|suivre|suivi(?:e|\(e\))?|s['’]abonner|abonn[ée]|se d[ée]sabonner|following|follow)$/i,
   };
 
   /* Rythme « humain » (millisecondes). Tout est tiré au hasard entre les bornes.
      C'est ce qui casse la régularité mécanique d'un bot. */
   const PACE = {
-    landing: [600, 1400], // temps passé sur la page avant de réagir
-    readScroll: [450, 1000], // entre deux scrolls de lecture
-    beforeMenu: [250, 650], // temps de réaction avant de viser le bouton « … »
-    menuRead: [350, 850], // lecture du menu avant de cliquer « Bloquer »
-    confirmRead: [400, 950], // hésitation devant la confirmation
+    landing: [250, 700], // temps passé sur la page avant de réagir
+    readScroll: [250, 600], // entre deux scrolls de lecture
+    beforeMenu: [120, 350], // temps de réaction avant de viser le bouton « … »
+    menuRead: [200, 500], // lecture du menu avant de cliquer « Bloquer »
+    confirmRead: [200, 550], // hésitation devant la confirmation
   };
 
   const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -70,7 +73,7 @@
     const rect = el.getBoundingClientRect();
     if (rect.top < 0 || rect.bottom > window.innerHeight) {
       el.scrollIntoView({ block: 'center', behavior: 'smooth' });
-      await sleep(rand(200, 400));
+      await sleep(rand(120, 260));
     }
 
     const box = el.getBoundingClientRect();
@@ -89,31 +92,31 @@
           clientY: y - (y - window.innerHeight / 2) * (1 - i / 3) * 0.2,
         }),
       );
-      await sleep(rand(25, 70));
+      await sleep(rand(12, 34));
     }
 
     el.dispatchEvent(new Pointer('pointerover', base));
     el.dispatchEvent(new Pointer('pointerenter', base));
     el.dispatchEvent(new MouseEvent('mouseover', base));
 
-    await sleep(rand(90, 220)); // temps de réaction avant l'appui
+    await sleep(rand(50, 130)); // temps de réaction avant l'appui
 
     el.dispatchEvent(new Pointer('pointerdown', { ...base, pointerId: 1, isPrimary: true, buttons: 1 }));
     el.dispatchEvent(new MouseEvent('mousedown', { ...base, buttons: 1 }));
 
-    await sleep(rand(50, 110)); // maintien du bouton
+    await sleep(rand(35, 80)); // maintien du bouton
 
     el.dispatchEvent(new Pointer('pointerup', { ...base, pointerId: 1, isPrimary: true, buttons: 0 }));
     el.dispatchEvent(new MouseEvent('mouseup', { ...base, buttons: 0 }));
     el.dispatchEvent(new MouseEvent('click', { ...base, buttons: 0 }));
 
-    await sleep(rand(60, 150));
+    await sleep(rand(40, 90));
   }
 
   async function scrollToTop() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
-    await waitFor(() => window.scrollY < 4, 2000, 100);
-    await sleep(rand(150, 380));
+    await waitFor(() => window.scrollY < 4, 1500, 80);
+    await sleep(rand(90, 220));
   }
 
   /** Fait semblant de parcourir le profil avant d'agir. */
@@ -208,6 +211,12 @@
     return best;
   }
 
+  /** Bouton d'action du header de profil (Suivre / Suivi / Débloquer…). */
+  function findProfileAction(re) {
+    const header = document.querySelector('header');
+    return header ? findClickable(re, { scope: header }) : null;
+  }
+
   /** Le bouton « … » du header de profil. */
   function findOptionsButton() {
     const header = document.querySelector('header');
@@ -237,7 +246,6 @@
 
   async function blockCurrentProfile() {
     await waitFor(() => document.readyState === 'complete', 8000, 100);
-    await sleep(jitter(PACE.landing));
 
     if (isSessionBroken()) {
       return { status: 'login', detail: 'Session Instagram expirée ou vérification requise.' };
@@ -251,6 +259,19 @@
     if (isUnavailable()) {
       return { status: 'notfound', detail: 'Profil indisponible.' };
     }
+
+    // 0. Détection précoce du blocage existant.
+    //    Sur un compte déjà bloqué, le bouton d'action du header vaut
+    //    « Débloquer » au lieu de « Suivre ». On le lit avant de quoi que ce
+    //    soit : ça évite la lecture du profil et l'ouverture du menu, soit
+    //    plusieurs secondes par compte déjà traité.
+    const action = await waitFor(() => findProfileAction(RE.action), 5000, 120);
+    if (action && RE.unblock.test(norm(action.textContent))) {
+      return { status: 'already', detail: 'Compte déjà bloqué.' };
+    }
+
+    // La page est là : on laisse le temps de « la lire ».
+    await sleep(jitter(PACE.landing));
 
     // On « lit » le profil avant de faire quoi que ce soit.
     await simulateReading();

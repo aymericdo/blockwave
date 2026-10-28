@@ -1,0 +1,4 @@
+.DS_Store
+
+# Artefact de build : généré par ./scripts/package.sh, jamais versionné.
+*.zip
