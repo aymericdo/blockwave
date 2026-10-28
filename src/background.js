@@ -19,8 +19,12 @@ const DONE_KEY = 'blockwave:done';
 
 /**
  * Liste de secours : utilisée seulement si Supabase est injoignable ET qu'aucun
- * cache n'existe. En temps normal la liste vient de la table `accounts`.
- * Source de vérité pour l'amorçage : `supabase/seed.sql`.
+ * cache n'existe. En temps normal la liste vient de la table `accounts`, qui
+ * est la source de vérité (`supabase/seed.sql`, `supabase/migrations/`).
+ *
+ * Volontairement figée : c'est un amorçage dégradé pour une première
+ * installation hors-ligne, pas un miroir de la base. Inutile de la compléter à
+ * chaque ajout — elle n'a pas à suivre la liste collaborative.
  */
 const FALLBACK_ACCOUNTS = [
   'ericzemmour_',

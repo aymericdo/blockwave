@@ -159,14 +159,29 @@ Points clés :
 - `schema.sql` est idempotent : le relancer après une mise à jour applique les
   changements sur une base existante, sans toucher aux données.
 
+### Appliquer une migration
+
+`supabase/seed.sql` amorce une base neuve. Sur une base **déjà en service** —
+comptes approuvés, propositions en attente —, préférer `supabase/migrations/` :
+chaque fichier n'ajoute que son delta et peut être relancé sans risque.
+
+| Migration | Contenu |
+| --- | --- |
+| `20261028160000_ajout_comptes_politiques.sql` | 36 comptes, dont 29 nouveaux |
+
+Les deux scripts coupent le trigger `blockwave_throttle` le temps de l'insertion
+(52 lignes dépassent son plafond de 40/heure) et le réarment dans la même
+transaction ; un échec annule le `disable` en même temps que l'insertion.
+
 ### Ajouter des comptes à la main
 
 Directement dans Supabase → **Table Editor → accounts** : créer une ligne avec
 `username` et `status = 'approved'`. Pratique pour amorcer la liste.
 
-La liste de secours (si Supabase est injoignable et sans cache) reprend les
-comptes de `supabase/seed.sql`, dans `FALLBACK_ACCOUNTS` (`src/background.js`).
-Les deux doivent rester alignés.
+La liste de secours (`FALLBACK_ACCOUNTS`, dans `src/background.js`) ne sert
+qu'au tout premier lancement hors-ligne : Supabase injoignable **et** aucun
+cache. C'est un amorçage figé, volontairement **non** aligné sur le seed — la
+source de vérité reste la table `accounts`, pas le code de l'extension.
 
 ## Architecture
 
@@ -175,6 +190,8 @@ Les deux doivent rester alignés.
 | `config.js` | URL + clé `anon` Supabase, partagés par l'extension et les pages |
 | `handles.js` | Normalisation des pseudos (`@x`, URL, `?hl=fr`…) — source unique |
 | `supabase/schema.sql` | Table, contraintes, RLS, trigger anti-spam, amorçage |
+| `supabase/seed.sql` | Liste de départ (52 comptes), réexécutable |
+| `supabase/migrations/` | Ajouts incrémentaux à appliquer sur une base déjà en service |
 | `web/index.html` + `submit.js` | Formulaire public de proposition |
 | `web/admin.html` + `admin.js` | Console de modération (lien magique) |
 | `src/background.js` | Orchestrateur : récupère la liste, navigue profil par profil, gère l'état et le rythme |
