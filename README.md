@@ -346,14 +346,18 @@ Pour ralentir davantage, augmente les bornes de `PACE` et `PACING`.
 
 ## Limites connues
 
-- Le scénario Facebook est validé sur une **Page** (profil public). Trois
+- Le scénario Facebook est validé sur une **Page** (profil public). Quatre
   particularités y sont encodées — ne pas les « simplifier » :
-  deux boutons portent le libellé « Plus » (le « … » de l'en-tête et l'onglet
-  de la rangée d'onglets), et c'est la géométrie qui les départage ; la
-  confirmation s'appelle **`Confirmer`**, jamais `Bloquer` ; un profil
-  personnel peut se comporter différemment d'une Page. Tout est dans
-  `src/content/facebook.js`. En cas d'échec, le popup liste les entrées
-  réellement trouvées (« Vu : … ») et la console (F12) trace les scores
+  - deux boutons portent le libellé « Plus » (le « … » de l'en-tête et l'onglet
+    de la rangée d'onglets) ; c'est la **géométrie** qui les départage ;
+  - la confirmation s'appelle **`Confirmer`**, jamais `Bloquer` ;
+  - un second dialogue **« Vous avez bloqué X »** apparaît ensuite : il faut
+    cliquer `Fermer`, sinon la modale reste affichée (et l'attente coûtait
+    8 s par compte) ;
+  - un profil personnel peut se comporter différemment d'une Page.
+
+  Tout est dans `src/content/facebook.js`. En cas d'échec, le popup liste les
+  entrées réellement trouvées (« Vu : … ») et la console (F12) trace les scores
   `[Blockwave:facebook]`.
 - Instagram peut changer son interface : dans ce cas, ajuste les regex de
   `src/content/instagram.js` (`RE.options`, `RE.block`, `RE.unblock`).

@@ -7,8 +7,9 @@
  *
  *   menu « … » → « Bloquer » → dialogue « Confirmer » → vérification
  *
- * Chaîne validée sur une Page (profil public) : « … » → « Bloquer » →
- * « Confirmer » → vérification. Les ancres, par ordre de préférence :
+ * Chaîne validée sur une Page (profil public) :
+ *   « … » → « Bloquer » → « Confirmer » → « Fermer » (dialogue de succès).
+ * Les ancres, par ordre de préférence :
  *      1. `aria-haspopup="menu"` hors navigation, départagé par la géométrie
  *      2. le conteneur `[role="menu"]` et ses `[role="menuitem"]`
  *      3. le texte visible « Bloquer », « Confirmer », « Annuler le blocage »
@@ -52,6 +53,8 @@
     /* La boîte de confirmation ne répète pas l'action : elle propose
      * « Annuler » et « Confirmer ». Ne jamais chercher « Bloquer » ici. */
     confirm: /^(confirmer|confirm|bloquer|block)$/i,
+    /* Le dialogue de succès ne propose qu'un bouton de fermeture. */
+    close: /^(fermer|close|ok)$/i,
     /* Bouton principal de la barre d'actions : sert d'ancre au repli
      * géométrique quand le « … » n'a pas d'aria-haspopup. */
     primaryAction:
@@ -94,8 +97,37 @@
   }
 
   /**
-   * Facebook confirme le blocage par un bandeau (« Vous avez bloqué… ») ou par
-   * une action « Annuler le blocage » à la place de « Suivre ». Ces deux
+   * Le dialogue « Vous avez bloqué X » qui suit la confirmation. Il ne se
+   * referme pas tout seul : sans ça, la modale reste ouverte et masque la page.
+   */
+  function blockedDialog() {
+    for (const dialog of document.querySelectorAll('[role="dialog"]')) {
+      if (!isVisible(dialog)) continue;
+
+      const text = norm(dialog.innerText).toLowerCase();
+      if (text.includes('vous avez bloqué') || text.includes('you blocked')) {
+        return dialog;
+      }
+    }
+    return null;
+  }
+
+  async function dismissDialog(dialog) {
+    const close = findClickable(RE.close, {
+      scope: dialog,
+      maxLength: 20,
+      exact: RE.close,
+    });
+
+    if (close) await humanClick(actionable(close));
+    else pressEscape();
+
+    await sleep(200);
+  }
+
+  /**
+   * Facebook confirme aussi le blocage par un bandeau (« Vous avez bloqué… ») ou
+   * par une action « Annuler le blocage » à la place de « Suivre ». Ces deux
    * libellés n'apparaissent jamais sur un profil non bloqué.
    */
   function showsBlockedNotice() {
@@ -404,15 +436,20 @@
     await sleep(jitter(PACE.confirmRead));
     await humanClick(actionable(confirmButton));
 
-    // 4. Vérifier. Deux signaux possibles, selon que Facebook recharge la page
-    //    ou laisse l'utilisateur dessus :
-    //      - le profil devient indisponible (le blocage masque la personne) ;
-    //      - le menu propose désormais « Débloquer ».
-    await waitFor(() => !findDialog(), 8000, 150);
+    // 4. Vérifier. Facebook remplace la boîte de confirmation par un dialogue
+    //    « Vous avez bloqué X » — c'est le signal le plus fiable. Il faut le
+    //    refermer soi-même : il ne disparaît jamais tout seul.
+    const notice = await waitFor(() => blockedDialog(), 9000, 150);
+    if (notice) {
+      await dismissDialog(notice);
+      return { status: 'blocked', detail: 'Bloqué et vérifié.' };
+    }
 
+    // Autres versions : le profil devient indisponible, ou un bandeau
+    // « Annuler le blocage » remplace les actions.
     const confirmed = await waitFor(
       () => isUnavailable() || showsBlockedNotice(),
-      5000,
+      3000,
       200,
     );
     if (confirmed) return { status: 'blocked', detail: 'Bloqué et vérifié.' };

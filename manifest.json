@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Blockwave",
   "version": "0.2.0",
-  "description": "Bloquez en masse les comptes d'extrême droite sur Instagram et Facebook. Une méthode née au Brésil pour reprendre la main sur son fil.",
+  "description": "Bloquez en masse les comptes d'extrême droite sur Instagram et Facebook. La méthode née au Brésil, adaptée à votre fil.",
   "icons": {
     "16": "icons/icon16.png",
     "32": "icons/icon32.png",
