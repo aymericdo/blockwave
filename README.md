@@ -118,6 +118,10 @@ Déploiement : Netlify lit `netlify.toml` à la racine (`base = "admin"`,
 d'environnement à renseigner — la configuration Supabase vient de `config.js`,
 à la racine du dépôt, partagée avec l'extension.
 
+Le favicon n'est pas un fichier à maintenir à part : `node scripts/build-icons.mjs`
+le génère dans `admin/public/` depuis `assets/icon-source.png`, la même source
+que les icônes de l'extension.
+
 > Après le premier déploiement, ajoute l'URL Netlify dans **Supabase →
 > Authentication → URL Configuration** (`Site URL` et `Redirect URLs`), sinon le
 > lien magique renverra vers l'ancien domaine GitHub Pages.

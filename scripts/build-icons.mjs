@@ -298,7 +298,25 @@ for (const size of SIZES) {
 
   const target = path.join(outDir, `icon${size}.png`);
   fs.writeFileSync(target, png);
-  console.log(`  ${target.padEnd(22)} ${(png.length / 1024).toFixed(1)} Ko`);
+  console.log(`  ${target.padEnd(30)} ${(png.length / 1024).toFixed(1)} Ko`);
+}
+
+/* Favicon de la console de modération : produit ici pour qu'il n'existe qu'une
+ * seule source d'icônes (assets/icon-source.png). Vite sert admin/public/ tel
+ * quel, en dev comme au build. */
+const FAVICONS = [
+  { size: 32, target: 'admin/public/favicon-32.png' },
+  { size: 180, target: 'admin/public/apple-touch-icon.png' },
+];
+
+for (const { size, target } of FAVICONS) {
+  const scaled = resample(rgb, width, height, size, size);
+  const alpha = roundedAlpha(size, size * CORNER_RATIO);
+  const png = encodePNG(scaled, alpha, size);
+
+  fs.mkdirSync(path.dirname(target), { recursive: true });
+  fs.writeFileSync(target, png);
+  console.log(`  ${target.padEnd(30)} ${(png.length / 1024).toFixed(1)} Ko`);
 }
 
 console.log('terminé.');
