@@ -38,7 +38,11 @@ for path in "${FILES[@]}"; do
   fi
 done
 
-rm -f "$NAME"
+# Toutes les archives, pas seulement celle qu'on s'apprête à produire : après un
+# changement de version, l'ancienne resterait sinon indéfiniment sur le disque
+# et on risque d'uploader la mauvaise.
+rm -f blockwave-*.zip
+
 zip -rq "$NAME" "${FILES[@]}" -x '*.DS_Store' '*__MACOSX*' 'icons/icon512.png'
 
 COUNT=$(unzip -Z1 "$NAME" | grep -v '/$' | wc -l | tr -d ' ')
