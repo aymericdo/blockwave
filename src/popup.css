@@ -52,6 +52,22 @@ h1 {
   color: var(--muted);
 }
 
+/* Plateforme déduite de l'onglet actif : sans elle, on ne saurait pas quelle
+   liste est affichée ni sur quel réseau le bouton va agir. */
+.platform {
+  margin-left: auto;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+  flex: none;
+}
+
 button {
   width: 100%;
   border: 0;

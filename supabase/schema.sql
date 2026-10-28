@@ -19,6 +19,7 @@ create extension if not exists pgcrypto;
 -- ----------------------------------------------------------------------------
 create table if not exists public.accounts (
   id          uuid primary key default gen_random_uuid(),
+  platform    text not null default 'instagram',
   username    text not null,
   status      text not null default 'pending',
   reason      text,
@@ -27,6 +28,12 @@ create table if not exists public.accounts (
   reviewed_by uuid references auth.users (id) on delete set null
 );
 
+-- `create table if not exists` ne touche pas une table déjà présente : la
+-- colonne doit être ajoutée à part pour que ce script reste rejouable sur une
+-- base existante (les lignes antérieures deviennent des comptes Instagram).
+alter table public.accounts
+  add column if not exists platform text not null default 'instagram';
+
 -- Contraintes ajoutées séparément pour rester idempotent.
 do $$
 begin
@@ -34,6 +41,12 @@ begin
     alter table public.accounts
       add constraint accounts_status_check
       check (status in ('pending', 'approved', 'rejected'));
+  end if;
+
+  if not exists (select 1 from pg_constraint where conname = 'accounts_platform_check') then
+    alter table public.accounts
+      add constraint accounts_platform_check
+      check (platform in ('instagram', 'facebook'));
   end if;
 
   if not exists (select 1 from pg_constraint where conname = 'accounts_username_format') then
@@ -50,13 +63,20 @@ begin
 end
 $$;
 
--- Unicité insensible à la casse : "@Marine_Lepen" et "marine_lepen" sont le
--- même compte. C'est aussi ce qui protège des doublons de soumission.
-create unique index if not exists accounts_username_unique
-  on public.accounts (lower(username));
+-- Unicité par couple (plateforme, pseudo) : le même nom peut désigner deux
+-- personnes différentes sur Instagram et sur Facebook. Insensible à la casse,
+-- "@Marine_Lepen" et "marine_lepen" restent le même compte. C'est aussi ce qui
+-- protège des doublons de soumission.
+create unique index if not exists accounts_platform_username_unique
+  on public.accounts (platform, lower(username));
 
-create index if not exists accounts_status_idx
-  on public.accounts (status, created_at desc);
+-- L'ancien index mono-colonne interdisait le même pseudo sur deux réseaux.
+drop index if exists accounts_username_unique;
+
+drop index if exists accounts_status_idx;
+
+create index if not exists accounts_platform_status_idx
+  on public.accounts (platform, status, created_at desc);
 
 -- ----------------------------------------------------------------------------
 -- 2. Liste des administrateurs

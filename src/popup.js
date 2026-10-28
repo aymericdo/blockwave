@@ -1,9 +1,11 @@
 /* Blockwave — popup */
 
 import { CONFIG } from '../config.js';
-import { handleFromUrl } from '../handles.js';
+import { PLATFORMS, handleFromProfileUrl, platformFromUrl } from './platforms.js';
 
-const STORAGE_KEY = 'blockwave:run';
+/* Une exécution = une plateforme, celle de l'onglet actif. Le popup ne montre
+ * donc jamais qu'une seule liste : celle du réseau sur lequel il a été ouvert. */
+const runKey = (platform) => `blockwave:run:${platform}`;
 
 const LABELS = {
   pending: 'attente',
@@ -30,6 +32,7 @@ const el = {
   list: document.getElementById('list'),
   status: document.getElementById('status'),
   warning: document.getElementById('warning'),
+  platform: document.getElementById('platform'),
 };
 
 const ORIGIN_LABEL = {
@@ -39,11 +42,18 @@ const ORIGIN_LABEL = {
 };
 
 let state = null;
+let platform = null;
 
 /* ------------------------------------------------------------------ */
 
-function isInstagramUrl(url) {
-  return /^https:\/\/([a-z0-9-]+\.)?instagram\.com\//i.test(url || '');
+async function detectPlatform() {
+  try {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    return platformFromUrl(tab?.url);
+  } catch {
+    /* activeTab non accordée */
+    return null;
+  }
 }
 
 function describeSource(source) {
@@ -82,22 +92,27 @@ function describeSource(source) {
 function render() {
   const accounts = state?.accounts ?? [];
   const running = Boolean(state?.running);
+  const busy = Boolean(state?.busy); // un autre réseau tourne déjà
 
   const todo = accounts.filter((account) => account.state !== 'done').length;
 
-  el.start.disabled = running || todo === 0;
-  el.start.textContent = running
+  el.start.disabled = !platform || running || busy || todo === 0;
+  el.start.textContent = running || busy
     ? 'Blocage en cours…'
     : todo
       ? `Bloquer les ${todo} comptes`
-      : 'Tout est déjà traité';
+      : platform
+        ? 'Tout est déjà traité'
+        : 'Aucune plateforme';
 
   el.reset.hidden = running || !state?.finishedAt;
   el.refresh.disabled = running;
   el.recheck.hidden = running || !state?.source?.done;
-  el.addInput.disabled = running;
-  el.addSubmit.disabled = running;
-  el.source.textContent = describeSource(state?.source);
+  el.addInput.disabled = running || !platform;
+  el.addSubmit.disabled = running || !platform;
+  el.source.textContent = platform
+    ? describeSource(state?.source)
+    : 'plateforme non prise en charge';
 
   // Remplacer les enfants peut remettre le défilement à zéro : on le restaure.
   const previousScroll = el.list.scrollTop;
@@ -173,13 +188,30 @@ function showWarning(text) {
 
 /* ------------------------------------------------------------------ */
 
-async function init() {
+async function load() {
   try {
-    state = await chrome.runtime.sendMessage({ type: 'GET' });
+    state = await chrome.runtime.sendMessage({ type: 'GET', platform });
   } catch {
     state = null;
   }
   render();
+}
+
+async function init() {
+  platform = await detectPlatform();
+
+  if (!platform) {
+    render();
+    showWarning(
+      "Ouvre un onglet instagram.com ou facebook.com (connecté à ton compte), puis rouvre ce popup.",
+    );
+    return;
+  }
+
+  el.platform.textContent = PLATFORMS[platform].label;
+  el.platform.hidden = false;
+
+  await load();
   await prefillFromActiveTab();
 }
 
@@ -193,7 +225,7 @@ async function prefillFromActiveTab() {
 
   try {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    const handle = handleFromUrl(tab?.url);
+    const handle = handleFromProfileUrl(tab?.url);
     if (!handle) return;
 
     el.addInput.value = handle;
@@ -204,8 +236,12 @@ async function prefillFromActiveTab() {
 }
 
 chrome.storage.onChanged.addListener((changes, area) => {
-  if (area !== 'local' || !changes[STORAGE_KEY]) return;
-  state = changes[STORAGE_KEY].newValue;
+  if (area !== 'local' || !platform) return;
+
+  const change = changes[runKey(platform)];
+  if (!change) return;
+
+  state = change.newValue;
   render();
 });
 
@@ -214,9 +250,9 @@ el.start.addEventListener('click', async () => {
 
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
 
-  if (!tab?.id || !isInstagramUrl(tab.url)) {
+  if (!tab?.id || platformFromUrl(tab.url) !== platform) {
     showWarning(
-      "Ouvre d'abord un onglet instagram.com (connecté à ton compte), puis relance.",
+      `Ouvre d'abord un onglet ${PLATFORMS[platform].label} (connecté à ton compte), puis relance.`,
     );
     return;
   }
@@ -224,7 +260,7 @@ el.start.addEventListener('click', async () => {
   el.start.disabled = true;
 
   try {
-    await chrome.runtime.sendMessage({ type: 'START', tabId: tab.id });
+    await chrome.runtime.sendMessage({ type: 'START', tabId: tab.id, platform });
   } catch (error) {
     showWarning(`Impossible de démarrer : ${error.message}`);
     el.start.disabled = false;
@@ -232,7 +268,7 @@ el.start.addEventListener('click', async () => {
 });
 
 el.reset.addEventListener('click', async () => {
-  await chrome.runtime.sendMessage({ type: 'RESET' });
+  await chrome.runtime.sendMessage({ type: 'RESET', platform });
   el.warning.hidden = true;
 });
 
@@ -240,7 +276,7 @@ el.recheck.addEventListener('click', async () => {
   el.recheck.disabled = true;
 
   try {
-    const next = await chrome.runtime.sendMessage({ type: 'CLEAR_DONE' });
+    const next = await chrome.runtime.sendMessage({ type: 'CLEAR_DONE', platform });
     if (next?.error) throw new Error(next.error);
     state = next;
   } catch (error) {
@@ -256,7 +292,7 @@ el.refresh.addEventListener('click', async () => {
   el.refresh.textContent = '…';
 
   try {
-    const next = await chrome.runtime.sendMessage({ type: 'REFRESH' });
+    const next = await chrome.runtime.sendMessage({ type: 'REFRESH', platform });
     if (next?.error) throw new Error(next.error);
     state = next;
   } catch (error) {
@@ -281,7 +317,7 @@ el.addForm.addEventListener('submit', async (event) => {
   event.preventDefault();
   el.addMessage.hidden = true;
 
-  if (!el.addInput.value.trim()) return;
+  if (!platform || !el.addInput.value.trim()) return;
 
   el.addSubmit.disabled = true;
 
@@ -289,12 +325,13 @@ el.addForm.addEventListener('submit', async (event) => {
     const result = await chrome.runtime.sendMessage({
       type: 'ADD_ACCOUNT',
       username: el.addInput.value,
+      platform,
     });
 
     if (!result?.ok) {
       showAddMessage(
         result?.error === 'invalid'
-          ? "Ce n'est pas un pseudo Instagram valide."
+          ? `Ce n'est pas un pseudo ${PLATFORMS[platform].label} valide.`
           : result?.error || 'Ajout impossible.',
         true,
       );
@@ -327,6 +364,7 @@ async function removeAccount(username) {
     const result = await chrome.runtime.sendMessage({
       type: 'REMOVE_ACCOUNT',
       username,
+      platform,
     });
     if (result?.run) state = result.run;
   } catch (error) {

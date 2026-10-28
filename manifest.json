@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Blockwave",
-  "version": "0.1.1",
-  "description": "Bloquez en masse les comptes d'extrême droite sur Instagram. Une méthode née au Brésil pour reprendre la main sur son fil.",
+  "version": "0.2.0",
+  "description": "Bloquez en masse les comptes d'extrême droite sur Instagram et Facebook. Une méthode née au Brésil pour reprendre la main sur son fil.",
   "icons": {
     "16": "icons/icon16.png",
     "32": "icons/icon32.png",
@@ -10,7 +10,11 @@
     "128": "icons/icon128.png"
   },
   "permissions": ["activeTab", "storage"],
-  "host_permissions": ["*://*.instagram.com/*", "https://*.supabase.co/*"],
+  "host_permissions": [
+    "*://*.instagram.com/*",
+    "*://*.facebook.com/*",
+    "https://*.supabase.co/*"
+  ],
   "background": {
     "service_worker": "src/background.js",
     "type": "module"
@@ -28,7 +32,12 @@
   "content_scripts": [
     {
       "matches": ["*://*.instagram.com/*"],
-      "js": ["src/content.js"],
+      "js": ["src/content/common.js", "src/content/instagram.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["*://*.facebook.com/*"],
+      "js": ["src/content/common.js", "src/content/facebook.js"],
       "run_at": "document_idle"
     }
   ]

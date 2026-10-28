@@ -5,9 +5,9 @@
 #   ./scripts/package.sh
 #
 # Sortie : blockwave-<version>.zip à la racine du dépôt, où <version> est lue
-# dans manifest.json. Le contenu est volontairement restreint : web/, admin/,
-# supabase/, scripts/ et assets/ ne doivent pas partir, un relecteur du store
-# y verrait un import vers esm.sh et conclurait à du code distant.
+# dans manifest.json. Le contenu est volontairement restreint : admin/,
+# supabase/, scripts/ et assets/ ne doivent pas partir — le store n'a que faire
+# de la console de modération ni du schéma de base.
 
 set -euo pipefail
 

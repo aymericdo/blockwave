@@ -1,5 +1,17 @@
 import { formatDate } from '../lib/date';
-import { STATUS_LABEL, type Account, type Status } from '../types';
+import { profileUrl } from '../lib/profile';
+import {
+  PLATFORM_LABEL,
+  STATUS_LABEL,
+  type Account,
+  type Platform,
+  type Status,
+} from '../types';
+
+const BADGE: Record<Platform, string> = {
+  instagram: 'border-accent/35 bg-accent/15 text-accent',
+  facebook: 'border-[#1877f2]/40 bg-[#1877f2]/15 text-[#6cb2ff]',
+};
 
 export function QueueRow({
   row,
@@ -23,9 +35,14 @@ export function QueueRow({
   return (
     <li className="flex items-start justify-between gap-3.5 rounded-[11px] border border-line bg-surface px-[15px] py-[13px]">
       <div className="min-w-0">
-        <div className="text-sm font-semibold">
+        <div className="flex flex-wrap items-center gap-2 text-sm font-semibold">
+          <span
+            className={`rounded-full border px-1.5 py-px text-[10px] font-semibold uppercase tracking-[0.3px] ${BADGE[row.platform]}`}
+          >
+            {PLATFORM_LABEL[row.platform]}
+          </span>
           <a
-            href={`https://www.instagram.com/${encodeURIComponent(row.username)}/`}
+            href={profileUrl(row.platform, row.username)}
             target="_blank"
             rel="noopener noreferrer"
             className="text-ink no-underline hover:underline"

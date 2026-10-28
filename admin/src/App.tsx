@@ -6,9 +6,9 @@ import { Header } from './components/Header';
 import { LoginCard } from './components/LoginCard';
 import { stripAuthFragment } from './lib/auth';
 import { configured, supabase } from './lib/supabase';
-import type { Account, Status } from './types';
+import type { Account, PlatformFilter, Status } from './types';
 
-const COLUMNS = 'id, username, status, reason, created_at, reviewed_at';
+const COLUMNS = 'id, platform, username, status, reason, created_at, reviewed_at';
 
 /* Cible du lien magique : l'origine courante, sans « index.html » final.
  * Supabase refuse un `redirect_to` absent de son allowlist, et personne ne
@@ -30,6 +30,7 @@ export function App() {
   const [sending, setSending] = useState(false);
   const [sent, setSent] = useState(false);
   const [tab, setTab] = useState<Status>('pending');
+  const [platformFilter, setPlatformFilter] = useState<PlatformFilter>('all');
 
   /* Un seul abonnement à l'auth : INITIAL_SESSION couvre le cas « déjà
    * connecté », SIGNED_IN le retour du lien magique. */
@@ -186,9 +187,11 @@ export function App() {
           email={session.user.email ?? ''}
           rows={rows}
           tab={tab}
+          platformFilter={platformFilter}
           loading={loading}
           busyId={busyId}
           onTab={setTab}
+          onPlatformFilter={setPlatformFilter}
           onSignOut={signOut}
           onSetStatus={setStatus}
         />
