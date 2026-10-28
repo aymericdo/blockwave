@@ -10,6 +10,14 @@ import type { Account, Status } from './types';
 
 const COLUMNS = 'id, username, status, reason, created_at, reviewed_at';
 
+/* Cible du lien magique : l'origine courante, sans « index.html » final.
+ * Supabase refuse un `redirect_to` absent de son allowlist, et personne ne
+ * pense à y déclarer `/index.html` en plus de `/`. */
+function redirectTarget(): string {
+  const { origin, pathname } = window.location;
+  return origin + pathname.replace(/index\.html$/, '');
+}
+
 export function App() {
   const [session, setSession] = useState<Session | null>(null);
   const [authReady, setAuthReady] = useState(!supabase);
@@ -105,7 +113,7 @@ export function App() {
     const { error: otpError } = await supabase.auth.signInWithOtp({
       email,
       options: {
-        emailRedirectTo: window.location.origin + window.location.pathname,
+        emailRedirectTo: redirectTarget(),
       },
     });
 
