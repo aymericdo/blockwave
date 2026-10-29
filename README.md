@@ -71,6 +71,19 @@ code exécuté.
 2. Cliquer sur l'icône **Blockwave** dans la barre d'extensions
 3. Cliquer sur **Bloquer les N comptes**
 
+### Mettre en pause un blocage en cours
+
+Pendant une exécution, le bouton de lancement laisse place à **Mettre en pause**.
+La demande est prise en compte **entre deux comptes** : celui qui est ouvert va
+au bout (l'interrompre laisserait la page dans un état indéterminé et un compte
+à moitié traité), puis le bot s'arrête. L'onglet reste sur la page courante.
+
+L'exécution passe alors en pause et le bouton principal devient **Reprendre
+(N comptes)**. Reprendre reconstruit la file à partir du registre : les comptes
+déjà bloqués restent `traité` et ne sont pas rouverts, les autres repartent de
+zéro. L'état vit dans `chrome.storage.local`, donc fermer le popup — ou le
+navigateur — ne perd pas la pause.
+
 Le popup affiche la plateforme détectée dans son en-tête, d'où vient la liste
 (`liste partagée`, `cache local` ou `liste de secours`) et depuis quand elle
 est en cache. Si l'onglet actif n'est ni Instagram ni Facebook, tout est
@@ -99,6 +112,20 @@ pseudo courant et le texte est sélectionné : ouvrir le popup puis appuyer sur
 La détection passe par `handleFromProfileUrl()` (`src/platforms.js`) : chaque
 plateforme déclare ses segments réservés, pour ne pas confondre `/explore` ou
 `/marketplace` avec un pseudo.
+
+Le profil reste le **premier** segment du chemin. Les sous-pages qui gardent ce
+premier segment sont donc reconnues : `/pseudo/reels/`, `/pseudo/tagged/`, et
+les URLs de type `/pseudo/followers/mutualOnly` — Instagram laisse la boîte de
+dialogue ouverte dans l'URL, et c'est souvent depuis cette vue qu'on ouvre le
+popup. Seuls les onglets connus (`profileSubPaths`) et un identifiant numérique
+de contenu sont acceptés après le pseudo ; tout autre suffixe laisse le champ
+vide, pour ne jamais pré-remplir un pseudo qui n'en est pas un.
+
+Facebook fait exception avec ses pages sans pseudo : `profile.php?id=…` et
+`/people/<nom>/<id>/` donnent l'identifiant numérique, qui est un pseudo valide
+et la forme sous laquelle ces comptes figurent dans la liste. Hors de ces cas —
+fil d'actualité, page de post, `/people/<nom>/` sans id — le champ reste vide :
+il n'y a pas de compte à en déduire.
 
 Aucune interface n'est injectée dans Instagram : l'extension ne touche au DOM de
 la page que pour cliquer sur « Bloquer ».
@@ -211,14 +238,17 @@ chaque fichier n'ajoute que son delta et peut être relancé sans risque.
 | --- | --- |
 | `20261028160000_ajout_comptes_politiques.sql` | 36 comptes Instagram, dont 29 nouveaux |
 | `20261028190000_ajout_platform.sql` | colonne `platform`, index `(platform, lower(username))` |
+| `20261029141500_ajout_comptes_instagram.sql` | 297 comptes Instagram |
+| `20261029144000_ajout_comptes_facebook.sql` | 43 comptes Facebook |
 
-Les deux premières migrations doivent être appliquées **dans l'ordre
-chronologique** : la seconde suppose que les comptes existants ont déjà été
-insérés.
+Les migrations doivent être appliquées **dans l'ordre chronologique** : la
+seconde suppose que les comptes existants ont déjà été insérés, et les deux
+dernières s'appuient sur la colonne `platform`.
 
-Les deux scripts coupent le trigger `blockwave_throttle` le temps de l'insertion
-(52 lignes dépassent son plafond de 40/heure) et le réarment dans la même
-transaction ; un échec annule le `disable` en même temps que l'insertion.
+Les scripts qui insèrent des comptes en masse (seed et migrations d'ajout)
+coupent le trigger `blockwave_throttle` le temps de l'insertion — le seed et
+chaque migration dépassent son plafond de 40/heure — et le réarment dans la
+même transaction ; un échec annule le `disable` en même temps que l'insertion.
 
 ### Ajouter des comptes à la main
 
@@ -239,7 +269,7 @@ source de vérité reste la table `accounts`, pas le code de l'extension.
 | `handles.js` | Normalisation d'un pseudo (`@x`, URL, `?hl=fr`…) — indépendante de la plateforme |
 | `src/platforms.js` | Réseaux pris en charge : détection depuis l'URL, URL de profil, segments réservés |
 | `supabase/schema.sql` | Table, contraintes, RLS, trigger anti-spam, amorçage |
-| `supabase/seed.sql` | Liste de départ (52 comptes), réexécutable |
+| `supabase/seed.sql` | Liste de départ (349 comptes Instagram + 43 Facebook), réexécutable |
 | `supabase/migrations/` | Ajouts incrémentaux à appliquer sur une base déjà en service |
 | `admin/` | Console de modération React + Tailwind (Netlify), sources et build Vite |
 | `src/background.js` | Orchestrateur : récupère la liste, navigue profil par profil, gère l'état et le rythme |
@@ -260,7 +290,7 @@ déploiement. Les content scripts ciblent donc des signaux stables : `role`,
 | Menu | `[aria-label]` ≈ « Options » | `[aria-haspopup="menu"]` ≈ « Plus » |
 | Entrée | « Bloquer » dans le menu | « Bloquer » dans `[role="menu"]` |
 | Confirmation | « Bloquer » dans la boîte | **« Confirmer »** dans `[role="dialog"]` (jamais « Bloquer ») |
-| Déjà bloqué | bouton du header = « Débloquer » | le menu propose « Débloquer » |
+| Déjà bloqué | bouton du header = « Débloquer » | page « Ce contenu n'est pas disponible » + « Accéder au Fil », ou « Débloquer » dans le menu |
 
 Le texte est cherché par expression régulière, jamais par position : le libellé
 le plus court gagne, ce qui évite d'attraper un conteneur parent.
@@ -270,7 +300,7 @@ le plus court gagne, ce qui évite d'attraper un conteneur parent.
 | Statut | Sens |
 | --- | --- |
 | `bloqué` | Blocage effectué et vérifié |
-| `déjà` | Le compte était déjà bloqué (l'élément « Débloquer » est présent) |
+| `déjà` | Le compte était déjà bloqué (« Débloquer » dans le menu, ou page « Ce contenu n'est pas disponible » avec « Accéder au Fil ») |
 | `traité` | Bloqué lors d'une exécution précédente — le profil n'est même pas ouvert |
 | `introuvable` | Profil supprimé / renommé |
 | `session` | Le réseau demande une reconnexion → le bot s'arrête |
@@ -293,8 +323,14 @@ n'a changé, l'opération se termine donc en quelques centaines de millisecondes
 au lieu de repasser sur chaque profil.
 
 Le popup affiche le nombre de comptes traités dans sa ligne de provenance, et
-un lien **Revérifier** apparaît : il vide le registre et remet tous les comptes
-en file.
+un lien **Revérifier (N)** apparaît dès que le registre n'est pas vide.
+
+**Revérifier ne relance rien tout seul** : il vide le registre des comptes
+traités de la plateforme affichée, si bien que le prochain **Bloquer** rouvrira
+ces profils un par un. La conséquence est donc différée, mais coûteuse — d'où la
+confirmation en deux temps : le premier clic arme le bouton (`Confirmer ?`,
+message explicite, annulation automatique au bout de 5 s), le second exécute.
+Un clic isolé ne peut donc jamais vider le registre par accident.
 
 > Limite à connaître : le registre est local et ne sait pas ce que tu fais sur
 > le réseau. Si tu débloques quelqu'un à la main dans l'application, Blockwave
@@ -340,7 +376,10 @@ Sur Instagram, un compte **déjà bloqué** est détecté avant tout le reste : 
 bouton d'action du header vaut « Débloquer » et non « Suivre ». Ce contrôle
 précède la lecture du profil et l'ouverture du menu, ce qui ramène ces cas à
 1–2 secondes. Facebook n'offre pas d'indicateur équivalent dans l'en-tête : il
-faut ouvrir le menu pour le savoir.
+faut ouvrir le menu pour le savoir — sauf quand le blocage a fait disparaître le
+profil lui-même, auquel cas la page « Ce contenu n'est pas disponible pour le
+moment » avec un bouton **« Accéder au Fil »** est détectée avant tout le reste
+(voir `isBlockedContentPage`).
 
 Pour ralentir davantage, augmente les bornes de `PACE` et `PACING`.
 
@@ -354,6 +393,10 @@ Pour ralentir davantage, augmente les bornes de `PACE` et `PACING`.
   - un second dialogue **« Vous avez bloqué X »** apparaît ensuite : il faut
     cliquer `Fermer`, sinon la modale reste affichée (et l'attente coûtait
     8 s par compte) ;
+  - un compte déjà bloqué n'a plus de profil du tout : la page devient « Ce
+    contenu n'est pas disponible pour le moment » + « Accéder au Fil ». Le
+    couple de signaux est exigé, sinon un contenu simplement supprimé serait
+    compté comme un blocage réussi ;
   - un profil personnel peut se comporter différemment d'une Page.
 
   Tout est dans `src/content/facebook.js`. En cas d'échec, le popup liste les

@@ -21,6 +21,7 @@ const LABELS = {
 
 const el = {
   start: document.getElementById('start'),
+  pause: document.getElementById('pause'),
   reset: document.getElementById('reset'),
   refresh: document.getElementById('refresh'),
   recheck: document.getElementById('recheck'),
@@ -56,7 +57,7 @@ async function detectPlatform() {
   }
 }
 
-function describeSource(source) {
+function describeSource(source, doneCount = 0) {
   if (!source) return 'liste non chargée';
 
   const count =
@@ -79,8 +80,8 @@ function describeSource(source) {
     parts.push(`${source.local} ajout${source.local > 1 ? 's' : ''}`);
   }
 
-  if (source.done) {
-    parts.push(`${source.done} traité${source.done > 1 ? 's' : ''}`);
+  if (doneCount) {
+    parts.push(`${doneCount} traité${doneCount > 1 ? 's' : ''}`);
   }
 
   parts.push(ORIGIN_LABEL[source.origin] ?? source.origin);
@@ -93,25 +94,37 @@ function render() {
   const accounts = state?.accounts ?? [];
   const running = Boolean(state?.running);
   const busy = Boolean(state?.busy); // un autre réseau tourne déjà
+  const paused = Boolean(state?.paused);
+  const pausing = Boolean(state?.pausing);
 
   const todo = accounts.filter((account) => account.state !== 'done').length;
 
   el.start.disabled = !platform || running || busy || todo === 0;
-  el.start.textContent = running || busy
+  el.start.hidden = running;
+  el.start.textContent = busy
     ? 'Blocage en cours…'
-    : todo
-      ? `Bloquer les ${todo} comptes`
-      : platform
-        ? 'Tout est déjà traité'
-        : 'Aucune plateforme';
+    : paused
+      ? `Reprendre (${todo} comptes)`
+      : todo
+        ? `Bloquer les ${todo} comptes`
+        : platform
+          ? 'Tout est déjà traité'
+          : 'Aucune plateforme';
+
+  // Pendant un blocage, la pause remplace le bouton de lancement : il n'y a
+  // jamais deux actions concurrentes à l'écran.
+  el.pause.hidden = !running;
+  el.pause.disabled = pausing;
+  el.pause.textContent = pausing ? 'Pause en cours…' : 'Mettre en pause';
 
   el.reset.hidden = running || !state?.finishedAt;
   el.refresh.disabled = running;
-  el.recheck.hidden = running || !state?.source?.done;
+  el.recheck.hidden = running || !state?.doneCount;
+  refreshRecheckButton();
   el.addInput.disabled = running || !platform;
   el.addSubmit.disabled = running || !platform;
   el.source.textContent = platform
-    ? describeSource(state?.source)
+    ? describeSource(state?.source, state?.doneCount ?? 0)
     : 'plateforme non prise en charge';
 
   // Remplacer les enfants peut remettre le défilement à zéro : on le restaure.
@@ -184,6 +197,68 @@ function keepActiveVisible() {
 function showWarning(text) {
   el.warning.textContent = text;
   el.warning.hidden = false;
+}
+
+/* ------------------------------------------------------------------ */
+/* « Revérifier » : confirmation en deux temps                        */
+/* ------------------------------------------------------------------ */
+
+/* Le clic vide le registre des comptes déjà traités de la plateforme : tous les
+ * profils correspondants seront rouverts un par un au prochain lancement. Rien
+ * ne part tout seul, mais l'action est coûteuse à défaire — d'où le second clic. */
+const RECHECK_ARM_MS = 5000;
+
+let recheckArmed = false;
+let recheckTimer = null;
+/* Message affiché avant l'armement (Supabase non configuré, erreur…) : il est
+   restauré à l'annulation plutôt que perdu. */
+let warningBackup = null;
+
+function refreshRecheckButton() {
+  const count = state?.doneCount ?? 0;
+
+  el.recheck.dataset.armed = String(recheckArmed);
+  el.recheck.textContent = recheckArmed
+    ? 'Confirmer ?'
+    : count
+      ? `Revérifier (${count})`
+      : 'Revérifier';
+}
+
+function disarmRecheck() {
+  clearTimeout(recheckTimer);
+  recheckTimer = null;
+
+  if (!recheckArmed) return;
+  recheckArmed = false;
+  refreshRecheckButton();
+
+  if (warningBackup) {
+    el.warning.textContent = warningBackup;
+    el.warning.hidden = false;
+  } else {
+    el.warning.hidden = true;
+  }
+  warningBackup = null;
+}
+
+function armRecheck() {
+  warningBackup = el.warning.hidden ? null : el.warning.textContent;
+  recheckArmed = true;
+  refreshRecheckButton();
+
+  const count = state?.doneCount ?? 0;
+  const plural = count > 1 ? 's' : '';
+
+  showWarning(
+    `Revérifier oublie ${count} compte${plural} déjà traité${plural} sur ` +
+      `${PLATFORMS[platform].label} : ils seront rouverts un par un au prochain ` +
+      `blocage. Clique à nouveau sur « Confirmer ? » pour valider ` +
+      `(annulation automatique dans ${RECHECK_ARM_MS / 1000} s).`,
+  );
+
+  clearTimeout(recheckTimer);
+  recheckTimer = setTimeout(disarmRecheck, RECHECK_ARM_MS);
 }
 
 /* ------------------------------------------------------------------ */
@@ -273,11 +348,20 @@ el.reset.addEventListener('click', async () => {
 });
 
 el.recheck.addEventListener('click', async () => {
+  if (!recheckArmed) {
+    armRecheck();
+    return;
+  }
+
+  disarmRecheck();
   el.recheck.disabled = true;
 
   try {
     const next = await chrome.runtime.sendMessage({ type: 'CLEAR_DONE', platform });
     if (next?.error) throw new Error(next.error);
+    if (next?.ok === false) {
+      throw new Error(next.reason === 'running' ? 'un blocage est en cours' : 'opération refusée');
+    }
     state = next;
   } catch (error) {
     showWarning(`Réinitialisation impossible : ${error.message}`);
@@ -285,6 +369,33 @@ el.recheck.addEventListener('click', async () => {
 
   el.recheck.disabled = false;
   render();
+});
+
+el.pause.addEventListener('click', async () => {
+  el.pause.disabled = true;
+  el.warning.hidden = true;
+
+  try {
+    const result = await chrome.runtime.sendMessage({ type: 'PAUSE', platform });
+    if (!result?.ok) {
+      if (result?.reason === 'idle') {
+        /* Le service worker ne connaît plus d'exécution : elle a été tuée avec
+           le navigateur et l'état affiché est périmé. On remet tout à plat
+           plutôt que de laisser un « en cours » impossible à arrêter. */
+        await chrome.runtime.sendMessage({ type: 'RESET', platform });
+        await load();
+        showWarning(
+          "Le blocage précédent avait été interrompu (navigateur fermé) : progression remise à plat.",
+        );
+      } else {
+        showWarning('Pause impossible.');
+        el.pause.disabled = false;
+      }
+    }
+  } catch (error) {
+    showWarning(`Pause impossible : ${error.message}`);
+    el.pause.disabled = false;
+  }
 });
 
 el.refresh.addEventListener('click', async () => {

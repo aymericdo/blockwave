@@ -19,6 +19,11 @@
  * C'est la géométrie qui les départage (même ligne que « Suivre », à sa
  * droite), jamais le libellé seul.
  *
+ * Cas vérifié : un compte déjà bloqué n'affiche plus de profil du tout, mais
+ * « Ce contenu n'est pas disponible pour le moment » avec un bouton « Accéder
+ * au Fil ». Il n'y a alors ni menu « … » ni bouton « Débloquer » à ouvrir : la
+ * page elle-même est la preuve du blocage (voir `isBlockedContentPage`).
+ *
  * En cas d'échec, le détail renvoyé au popup liste les entrées réellement
  * trouvées dans le menu, et la console trace les scores des candidats.
  */
@@ -90,9 +95,33 @@
       text.includes("cette page n'est pas disponible") ||
       text.includes("cette page n’est pas disponible") ||
       text.includes("ce contenu n'est pas disponible") ||
+      text.includes("ce contenu n’est pas disponible") ||
       text.includes('this content isn') ||
       text.includes("this page isn't available") ||
       text.includes('contenu indisponible')
+    );
+  }
+
+  /**
+   * Profil déjà bloqué : Facebook remplace entièrement la page par « Ce contenu
+   * n'est pas disponible pour le moment » et ne laisse qu'un bouton « Accéder au
+   * Fil ». Sans ce bouton, le même message vient d'un contenu supprimé ou d'une
+   * mauvaise URL — d'où le couple de signaux, qui évite de confondre un compte
+   * bloqué avec un profil introuvable.
+   */
+  function isBlockedContentPage() {
+    const text = norm(document.body?.innerText).toLowerCase();
+
+    const masked =
+      text.includes("ce contenu n'est pas disponible") ||
+      text.includes("ce contenu n’est pas disponible") ||
+      text.includes('this content isn');
+    if (!masked) return false;
+
+    return (
+      text.includes('accéder au fil') ||
+      text.includes('aller au fil') ||
+      text.includes('go to feed')
     );
   }
 
@@ -331,6 +360,13 @@
     const match = location.pathname.match(/^\/([A-Za-z0-9._]+)\/?$/);
     if (!match) {
       return { status: 'error', detail: `Page inattendue (${location.pathname}).` };
+    }
+
+    if (isBlockedContentPage()) {
+      return {
+        status: 'already',
+        detail: 'Compte déjà bloqué (contenu masqué par Facebook).',
+      };
     }
 
     if (isUnavailable()) {

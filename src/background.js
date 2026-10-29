@@ -91,11 +91,16 @@ const jitter = ([min, max]) => rand(min, max);
 /**
  * Sommeil long découpé en tranches : chaque appel d'API extension remet à zéro
  * le compteur d'inactivité du service worker (sinon il est tué au bout de 30 s).
+ *
+ * `interruptible` rend la pause réactive : sans ça, une pause demandée pendant
+ * une pause longue (jusqu'à 7 s) ne serait prise en compte qu'au compte suivant.
  */
-async function humanDelay(ms) {
+async function humanDelay(ms, { interruptible = false } = {}) {
+  const step = interruptible ? 1000 : 4000;
   let remaining = ms;
   while (remaining > 0) {
-    const chunk = Math.min(remaining, 4000);
+    if (interruptible && pauseRequested) return;
+    const chunk = Math.min(remaining, step);
     await sleep(chunk);
     remaining -= chunk;
     await chrome.runtime.getPlatformInfo().catch(() => {});
@@ -155,6 +160,13 @@ async function clearDone(platform) {
     Object.entries(done).filter(([key]) => !key.startsWith(prefix)),
   );
   await chrome.storage.local.set({ [DONE_KEY]: next });
+}
+
+/** Nombre de comptes mémorisés comme traités pour cette plateforme. */
+async function countDone(platform) {
+  const done = await readDone();
+  const prefix = `${platform}:`;
+  return Object.keys(done).filter((key) => key.startsWith(prefix)).length;
 }
 
 /** Interroge Supabase. La RLS ne renvoie de toute façon que les approuvés. */
@@ -274,10 +286,13 @@ function buildRun(pool, platform) {
   return {
     platform,
     running: false,
+    pausing: false,
+    paused: false,
     startedAt: null,
     finishedAt: null,
     current: null,
     message: 'Prêt.',
+    doneCount: 0,
     source: {
       origin: pool.origin,
       fetchedAt: pool.fetchedAt,
@@ -297,6 +312,9 @@ async function readRun(platform) {
 }
 
 async function writeRun(run) {
+  /* Compté à chaque écriture : c'est ce que « Revérifier » remet à zéro, et le
+     popup l'affiche pour que la conséquence du clic soit visible avant. */
+  run.doneCount = await countDone(run.platform);
   await chrome.storage.local.set({ [runKey(run.platform)]: run });
   return run;
 }
@@ -436,9 +454,15 @@ async function ask(tabId, message, attempts = 12) {
 
 let active = false;
 let activePlatform = null;
+/* Demande de pause : consommée entre deux comptes, jamais au milieu d'un
+ * blocage (couper la navigation ou un clic laisserait la page dans un état
+ * indéterminé, et le compte serait perdu sans être marqué traité). */
+let pauseRequested = false;
 
 async function start(tabId, platform) {
   if (active || !isPlatform(platform)) return;
+
+  pauseRequested = false;
 
   const pool = await getPool(platform);
   const fresh = buildRun(pool, platform);
@@ -466,6 +490,9 @@ async function start(tabId, platform) {
 
   try {
     for (let i = 0; i < queue.length; i++) {
+      // Pause demandée : on s'arrête avant d'ouvrir le compte suivant.
+      if (pauseRequested) break;
+
       const account = queue[i];
 
       // Déjà bloqué lors d'une exécution précédente : on ne navigue même pas.
@@ -512,6 +539,9 @@ async function start(tabId, platform) {
 
       if (i === queue.length - 1) break;
 
+      // Inutile de patienter pour un compte qu'on ne va pas ouvrir.
+      if (pauseRequested) break;
+
       const next = queue[i + 1].username;
       const long_ = Math.random() < PACING.longPauseChance;
       const pause = jitter(long_ ? PACING.longPause : PACING.betweenProfiles);
@@ -520,15 +550,31 @@ async function start(tabId, platform) {
         run.message = `Pause de ${Math.round(pause / 1000)} s avant @${next}…`;
       });
 
-      await humanDelay(pause);
+      await humanDelay(pause, { interruptible: true });
     }
   } finally {
+    const pausing = pauseRequested;
+    pauseRequested = false;
     active = false;
     activePlatform = null;
 
+    let interrupted = false;
+
     await update(platform, (run) => {
       run.running = false;
+      run.pausing = false;
       run.current = null;
+
+      const remaining = run.accounts.filter((a) => a.state === 'pending').length;
+      interrupted = pausing && remaining > 0;
+      run.paused = interrupted;
+
+      if (interrupted) {
+        run.finishedAt = null;
+        run.message = `En pause — ${remaining} compte(s) restant(s). « Reprendre » continue la liste.`;
+        return;
+      }
+
       run.finishedAt = Date.now();
       const blocked = run.accounts.filter((a) => a.state === 'blocked').length;
       const already = run.accounts.filter((a) => a.state === 'already').length;
@@ -540,10 +586,14 @@ async function start(tabId, platform) {
         '.';
     });
 
-    try {
-      await chrome.tabs.update(tabId, { url: PLATFORMS[platform].homeUrl });
-    } catch {
-      /* l'onglet a peut-être été fermé, sans importance */
+    // En pause, on laisse l'onglet là où il est : c'est le contexte que
+    // l'utilisateur vient d'interrompre, et « Reprendre » le réutilise.
+    if (!interrupted) {
+      try {
+        await chrome.tabs.update(tabId, { url: PLATFORMS[platform].homeUrl });
+      } catch {
+        /* l'onglet a peut-être été fermé, sans importance */
+      }
     }
   }
 }
@@ -563,6 +613,26 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     start(message.tabId, platform).catch((error) => console.error('[Blockwave]', error));
     sendResponse({ ok: true });
     return false;
+  }
+
+  if (message?.type === 'PAUSE') {
+    if (!isPlatform(platform)) {
+      sendResponse({ ok: false, error: 'unsupported' });
+      return false;
+    }
+    if (!active || activePlatform !== platform) {
+      sendResponse({ ok: false, reason: 'idle' });
+      return false;
+    }
+
+    pauseRequested = true;
+    update(platform, (run) => {
+      run.pausing = true;
+      run.message = 'Pause demandée — arrêt dès la fin du compte en cours.';
+    })
+      .then(() => sendResponse({ ok: true }))
+      .catch((error) => sendResponse({ ok: false, error: String(error?.message || error) }));
+    return true;
   }
 
   if (message?.type === 'ADD_ACCOUNT') {
@@ -618,7 +688,12 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     }
     clearDone(platform)
       .then(() => getPool(platform))
-      .then((pool) => writeRun(buildRun(pool, platform)))
+      .then((pool) => {
+        const run = buildRun(pool, platform);
+        run.message =
+          'Registre vidé — les comptes seront recontrôlés au prochain blocage.';
+        return writeRun(run);
+      })
       .then(sendResponse)
       .catch((error) => sendResponse({ error: String(error?.message || error) }));
     return true;

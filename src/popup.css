@@ -137,6 +137,12 @@ button:disabled {
   cursor: default;
 }
 
+/* « Revérifier » demande une seconde confirmation : le libellé devient rouge
+   pour que l'état armé soit visible sans lire le message. */
+.link[data-armed='true'] {
+  color: var(--err);
+}
+
 /* ---------- ajout manuel ---------- */
 
 .add {
