@@ -8,13 +8,14 @@ export const STATUS_LABEL: Record<Status, string> = {
   rejected: 'rejeté',
 };
 
-export type Platform = 'instagram' | 'facebook';
+export type Platform = 'instagram' | 'facebook' | 'twitter';
 
-export const PLATFORMS: readonly Platform[] = ['instagram', 'facebook'];
+export const PLATFORMS: readonly Platform[] = ['instagram', 'facebook', 'twitter'];
 
 export const PLATFORM_LABEL: Record<Platform, string> = {
   instagram: 'Instagram',
   facebook: 'Facebook',
+  twitter: 'X (Twitter)',
 };
 
 /** `all` n'est pas une plateforme : c'est l'absence de filtre. */

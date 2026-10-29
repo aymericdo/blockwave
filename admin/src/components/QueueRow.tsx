@@ -11,6 +11,8 @@ import {
 const BADGE: Record<Platform, string> = {
   instagram: 'border-accent/35 bg-accent/15 text-accent',
   facebook: 'border-[#1877f2]/40 bg-[#1877f2]/15 text-[#6cb2ff]',
+  /* X assume le monochrome : pas de couleur de marque à reprendre. */
+  twitter: 'border-white/25 bg-white/10 text-[#e7e9ea]',
 };
 
 export function QueueRow({

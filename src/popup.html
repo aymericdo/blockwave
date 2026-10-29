@@ -20,6 +20,22 @@
     <button id="start" class="primary">Bloquer les comptes</button>
     <button id="pause" class="ghost" type="button" hidden>Mettre en pause</button>
 
+    <div
+      id="progress"
+      class="progress"
+      role="progressbar"
+      aria-label="Progression du blocage"
+      aria-valuemin="0"
+      aria-valuemax="100"
+      aria-valuenow="0"
+      hidden
+    >
+      <div class="progress-track">
+        <div id="progress-fill" class="progress-fill"></div>
+      </div>
+      <span id="progress-label" class="progress-label">0 / 0</span>
+    </div>
+
     <div class="meta">
       <span id="source">liste…</span>
       <span class="meta-actions">

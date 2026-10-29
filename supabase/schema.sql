@@ -46,7 +46,7 @@ begin
   if not exists (select 1 from pg_constraint where conname = 'accounts_platform_check') then
     alter table public.accounts
       add constraint accounts_platform_check
-      check (platform in ('instagram', 'facebook'));
+      check (platform in ('instagram', 'facebook', 'twitter'));
   end if;
 
   if not exists (select 1 from pg_constraint where conname = 'accounts_username_format') then

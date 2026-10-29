@@ -22,6 +22,9 @@ const LABELS = {
 const el = {
   start: document.getElementById('start'),
   pause: document.getElementById('pause'),
+  progress: document.getElementById('progress'),
+  progressFill: document.getElementById('progress-fill'),
+  progressLabel: document.getElementById('progress-label'),
   reset: document.getElementById('reset'),
   refresh: document.getElementById('refresh'),
   recheck: document.getElementById('recheck'),
@@ -121,6 +124,26 @@ function render() {
   el.refresh.disabled = running;
   el.recheck.hidden = running || !state?.doneCount;
   refreshRecheckButton();
+
+  /* Progression : les comptes déjà « traité » avant le lancement ne sont pas
+     rouverts, ils ne doivent donc pas compter dans le dénominateur — sinon la
+     barre démarrerait à 30 % sur une liste partiellement faite. « working »
+     reste du côté non fait : la barre avance à chaque compte terminé, pas au
+     moment où il s'ouvre. */
+  const visitable = accounts.filter((account) => account.state !== 'done');
+  const settled = visitable.filter(
+    (account) => account.state !== 'pending' && account.state !== 'working',
+  ).length;
+  const percent = visitable.length
+    ? Math.round((settled / visitable.length) * 100)
+    : 0;
+
+  el.progress.hidden = !(running || paused) || visitable.length === 0;
+  el.progress.dataset.paused = String(paused);
+  el.progress.setAttribute('aria-valuenow', String(percent));
+  el.progressFill.style.width = `${percent}%`;
+  el.progressLabel.textContent = `${settled} / ${visitable.length}`;
+
   el.addInput.disabled = running || !platform;
   el.addSubmit.disabled = running || !platform;
   el.source.textContent = platform
@@ -269,6 +292,20 @@ async function load() {
   } catch {
     state = null;
   }
+
+  /* Le popup est relu du disque à chaque ouverture, pas le service worker : si
+     l'extension vient d'être mise à jour sans être rechargée, le worker ne
+     connaît pas encore la plateforme et répond « unsupported ». Sans ce
+     message, l'écran se contente d'un « liste non chargée » et d'un ajout qui
+     échoue sur un pseudo pourtant valide. */
+  if (state?.unsupported) {
+    state = null;
+    showWarning(
+      `Le service worker de Blockwave ne connaît pas encore ${PLATFORMS[platform].label} : ` +
+        "recharge l'extension (chrome://extensions → ↻) puis rouvre ce popup.",
+    );
+  }
+
   render();
 }
 
@@ -278,7 +315,7 @@ async function init() {
   if (!platform) {
     render();
     showWarning(
-      "Ouvre un onglet instagram.com ou facebook.com (connecté à ton compte), puis rouvre ce popup.",
+      "Ouvre un onglet instagram.com, facebook.com ou x.com (connecté à ton compte), puis rouvre ce popup.",
     );
     return;
   }
@@ -441,9 +478,12 @@ el.addForm.addEventListener('submit', async (event) => {
 
     if (!result?.ok) {
       showAddMessage(
-        result?.error === 'invalid'
-          ? `Ce n'est pas un pseudo ${PLATFORMS[platform].label} valide.`
-          : result?.error || 'Ajout impossible.',
+        result?.error === 'unsupported'
+          ? "Le service worker de Blockwave est resté sur une ancienne version : " +
+            "recharge l'extension (chrome://extensions → ↻) puis réessaie."
+          : result?.error === 'invalid'
+            ? `Ce n'est pas un pseudo ${PLATFORMS[platform].label} valide.`
+            : result?.error || 'Ajout impossible.',
         true,
       );
       return;

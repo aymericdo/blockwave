@@ -636,6 +636,13 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   }
 
   if (message?.type === 'ADD_ACCOUNT') {
+    if (!isPlatform(platform)) {
+      /* Cas d'une extension mise à jour à moitié : le popup (relu du disque à
+       * chaque ouverture) connaît la plateforme, le service worker non. Sans ce
+       * code dédié, le popup accuserait à tort un pseudo invalide. */
+      sendResponse({ ok: false, error: 'unsupported' });
+      return false;
+    }
     addAccount(message.username, platform)
       .then(sendResponse)
       .catch((error) => sendResponse({ ok: false, error: String(error?.message || error) }));
@@ -643,6 +650,10 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   }
 
   if (message?.type === 'REMOVE_ACCOUNT') {
+    if (!isPlatform(platform)) {
+      sendResponse({ ok: false, error: 'unsupported' });
+      return false;
+    }
     removeAccount(message.username, platform)
       .then(sendResponse)
       .catch((error) => sendResponse({ ok: false, error: String(error?.message || error) }));

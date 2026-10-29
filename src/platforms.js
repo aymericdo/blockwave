@@ -61,6 +61,33 @@ export const PLATFORMS = {
       'reviews', 'posts', 'friends', 'mentions',
     ]),
   },
+
+  twitter: {
+    /* Le réseau s'appelle X, mais l'identifiant reste `twitter` : c'est le nom
+     * des URLs historiques (twitter.com redirige encore), et il est plus
+     * lisible que `x` dans la base, le stockage et le code. */
+    label: 'X (Twitter)',
+    /* Sous-domaines énumérés : avec un joker, `netx.com` ou `mailx.com`
+     * passeraient pour X, le domaine ne faisant qu'une lettre. */
+    host: /^https?:\/\/(?:(?:www|mobile|m)\.)?(?:x|twitter)\.com\//i,
+    homeUrl: 'https://x.com/',
+    profileUrl: (username) => `https://x.com/${username}`,
+    /* Routes de l'application qui ressemblent à un pseudo. */
+    reserved: new Set([
+      'home', 'explore', 'notifications', 'messages', 'i', 'settings', 'compose',
+      'search', 'hashtag', 'login', 'logout', 'signup', 'tos', 'privacy',
+      'about', 'jobs', 'account', 'intent', 'share', 'lists', 'bookmarks',
+      'verified', 'premium_sign_up', 'communities', 'connect_people', 'rules',
+      'help', 'download', 'who_to_follow', 'topics', 'spaces', 'video',
+      'trending', 'personalize', 'accessibility', 'search-advanced',
+      'notifications_timeline', 'oauth', 'flow', 'import', 'suspended',
+    ]),
+    /* Onglets d'un profil : `/pseudo/media`, `/pseudo/status/123`… */
+    profileSubPaths: new Set([
+      'with_replies', 'media', 'likes', 'highlights', 'articles', 'followers',
+      'following', 'verified_followers', 'photo', 'header_photo', 'status',
+    ]),
+  },
 };
 
 export const PLATFORM_IDS = Object.keys(PLATFORMS);

@@ -1,8 +1,8 @@
 # Blockwave
 
 Extension Chrome (Manifest V3) qui bloque automatiquement une liste de comptes
-sur **Instagram** et **Facebook** : le bot ouvre chaque profil, ouvre le menu
-« … », clique sur **Bloquer**, confirme, puis passe au suivant.
+sur **Instagram**, **Facebook** et **X (Twitter)** : le bot ouvre chaque profil,
+ouvre le menu « … », clique sur **Bloquer**, confirme, puis passe au suivant.
 
 La liste des comptes vit dans Supabase. Tu la modères depuis une console web ;
 les extensions déjà installées récupèrent la liste à jour toutes seules.
@@ -19,7 +19,8 @@ les extensions déjà installées récupèrent la liste à jour toutes seules.
 
 Il n'y a ni sélecteur ni enchaînement : **la plateforme est celle de l'onglet
 actif**. Ouvre le popup depuis un onglet Instagram, il bloque des comptes
-Instagram ; depuis un onglet Facebook, il bloque des comptes Facebook.
+Instagram ; depuis un onglet Facebook ou X, il bloque les comptes de ce réseau.
+Les deux domaines de X sont acceptés : `x.com` et `twitter.com` (qui redirige).
 
 Conséquence sur les données : le pseudo seul ne suffit pas à identifier
 quelqu'un. La table est donc unique sur le couple `(platform, username)` — le
@@ -56,8 +57,8 @@ Contenu attendu : **15 fichiers** — `manifest.json`, `config.js`,
 Équivalent manuel, si tu préfères :
 
 ```bash
-rm -f blockwave-0.2.0.zip
-zip -rq blockwave-0.2.0.zip manifest.json config.js handles.js src icons \
+rm -f blockwave-0.4.0.zip
+zip -rq blockwave-0.4.0.zip manifest.json config.js handles.js src icons \
   -x '*.DS_Store' 'icons/icon512.png'
 ```
 
@@ -67,7 +68,7 @@ code exécuté.
 
 ## Utilisation
 
-1. Se connecter à `instagram.com` **ou** `facebook.com` dans un onglet
+1. Se connecter à `instagram.com`, `facebook.com` **ou** `x.com` dans un onglet
 2. Cliquer sur l'icône **Blockwave** dans la barre d'extensions
 3. Cliquer sur **Bloquer les N comptes**
 
@@ -78,15 +79,22 @@ La demande est prise en compte **entre deux comptes** : celui qui est ouvert va
 au bout (l'interrompre laisserait la page dans un état indéterminé et un compte
 à moitié traité), puis le bot s'arrête. L'onglet reste sur la page courante.
 
+Pendant l'exécution, une **barre de progression** sous le bouton affiche
+`faits / à faire` (par exemple `147 / 349`). Le dénominateur ne compte que les
+comptes qui seront réellement ouverts : ceux déjà `traité` avant le lancement
+sont exclus, sinon la barre démarrerait à mi-course sur une liste partiellement
+faite. Elle avance à chaque compte *terminé*, pas à son ouverture.
+
 L'exécution passe alors en pause et le bouton principal devient **Reprendre
-(N comptes)**. Reprendre reconstruit la file à partir du registre : les comptes
+(N comptes)**. La barre reste affichée, en ambre, pour montrer où l'exécution
+s'est arrêtée. Reprendre reconstruit la file à partir du registre : les comptes
 déjà bloqués restent `traité` et ne sont pas rouverts, les autres repartent de
 zéro. L'état vit dans `chrome.storage.local`, donc fermer le popup — ou le
 navigateur — ne perd pas la pause.
 
 Le popup affiche la plateforme détectée dans son en-tête, d'où vient la liste
 (`liste partagée`, `cache local` ou `liste de secours`) et depuis quand elle
-est en cache. Si l'onglet actif n'est ni Instagram ni Facebook, tout est
+est en cache. Si l'onglet actif n'est ni Instagram, ni Facebook, ni X, tout est
 désactivé avec un message explicite.
 
 ### Ajouter un compte depuis le popup
@@ -224,7 +232,7 @@ Points clés :
   ajouts ;
 - l'index unique sur `(platform, lower(username))` couvre **tous** les statuts :
   un compte déjà présent — approuvé, en attente ou rejeté — ne peut plus être
-  soumis, et un pseudo Instagram peut exister en parallèle sur Facebook ;
+  soumis, et le même pseudo peut exister en parallèle sur plusieurs réseaux ;
 - `schema.sql` est idempotent : le relancer après une mise à jour applique les
   changements sur une base existante, sans toucher aux données.
 
@@ -240,10 +248,12 @@ chaque fichier n'ajoute que son delta et peut être relancé sans risque.
 | `20261028190000_ajout_platform.sql` | colonne `platform`, index `(platform, lower(username))` |
 | `20261029141500_ajout_comptes_instagram.sql` | 297 comptes Instagram |
 | `20261029144000_ajout_comptes_facebook.sql` | 43 comptes Facebook |
+| `20261029154500_ajout_plateforme_twitter.sql` | autorise `platform = 'twitter'` (contrainte `accounts_platform_check`) |
 
 Les migrations doivent être appliquées **dans l'ordre chronologique** : la
-seconde suppose que les comptes existants ont déjà été insérés, et les deux
-dernières s'appuient sur la colonne `platform`.
+seconde suppose que les comptes existants ont déjà été insérés, les suivantes
+s'appuient sur la colonne `platform`, et la dernière élargit la contrainte de
+plateforme — sans elle, un ajout X depuis le popup est refusé par la base.
 
 Les scripts qui insèrent des comptes en masse (seed et migrations d'ajout)
 coupent le trigger `blockwave_throttle` le temps de l'insertion — le seed et
@@ -253,7 +263,8 @@ même transaction ; un échec annule le `disable` en même temps que l'insertion
 ### Ajouter des comptes à la main
 
 Directement dans Supabase → **Table Editor → accounts** : créer une ligne avec
-`platform` (`instagram` ou `facebook`), `username` et `status = 'approved'`.
+`platform` (`instagram`, `facebook` ou `twitter`), `username` et
+`status = 'approved'`.
 Pratique pour amorcer la liste.
 
 La liste de secours (`FALLBACK_ACCOUNTS`, dans `src/background.js`) ne sert
@@ -276,21 +287,22 @@ source de vérité reste la table `accounts`, pas le code de l'extension.
 | `src/content/common.js` | Briques partagées par les content scripts : clic « humain », attentes, lecture simulée, messagerie |
 | `src/content/instagram.js` | Scénario Instagram : « Options » → « Bloquer » → confirmation → vérification « Débloquer » |
 | `src/content/facebook.js` | Scénario Facebook : menu « … » → « Bloquer » → confirmation → vérification |
+| `src/content/twitter.js` | Scénario X : `userActions` → « Bloquer @x » → feuille de confirmation → toast |
 | `src/popup.html/.css/.js` | Interface : lancement, provenance de la liste, suivi compte par compte |
 
 ### Pourquoi pas les sélecteurs CSS fournis ?
 
-Les classes d'Instagram (`x1n2onr6`, `x9f619`, `x78zum5`…) et de Facebook, comme
-les identifiants `#mount_0_0_xxx`, sont **générés** et changent à chaque
+Les classes d'Instagram (`x1n2onr6`, `x9f619`, `x78zum5`…), de Facebook et de X,
+comme les identifiants `#mount_0_0_xxx`, sont **générés** et changent à chaque
 déploiement. Les content scripts ciblent donc des signaux stables : `role`,
-`aria-label`, `aria-haspopup`, texte visible.
+`aria-label`, `aria-haspopup`, `data-testid`, texte visible.
 
-| | Instagram | Facebook |
-| --- | --- | --- |
-| Menu | `[aria-label]` ≈ « Options » | `[aria-haspopup="menu"]` ≈ « Plus » |
-| Entrée | « Bloquer » dans le menu | « Bloquer » dans `[role="menu"]` |
-| Confirmation | « Bloquer » dans la boîte | **« Confirmer »** dans `[role="dialog"]` (jamais « Bloquer ») |
-| Déjà bloqué | bouton du header = « Débloquer » | page « Ce contenu n'est pas disponible » + « Accéder au Fil », ou « Débloquer » dans le menu |
+| | Instagram | Facebook | X (Twitter) |
+| --- | --- | --- | --- |
+| Menu | `[aria-label]` ≈ « Options » | `[aria-haspopup="menu"]` ≈ « Plus » | `[data-testid="userActions"]` |
+| Entrée | « Bloquer » dans le menu | « Bloquer » dans `[role="menu"]` | `[data-testid="block"]` dans `[role="menu"]` |
+| Confirmation | « Bloquer » dans la boîte | **« Confirmer »** dans `[role="dialog"]` (jamais « Bloquer ») | `[data-testid="confirmationSheetConfirm"]` |
+| Déjà bloqué | bouton du header = « Débloquer » | page « Ce contenu n'est pas disponible » + « Accéder au Fil », ou « Débloquer » dans le menu | bannière « @x est bloqué » + « Voir les posts », bouton du header « Bloqué », ou `[data-testid="unblock"]` dans le menu |
 
 Le texte est cherché par expression régulière, jamais par position : le libellé
 le plus court gagne, ce qui évite d'attraper un conteneur parent.
@@ -404,9 +416,28 @@ Pour ralentir davantage, augmente les bornes de `PACE` et `PACING`.
   `[Blockwave:facebook]`.
 - Instagram peut changer son interface : dans ce cas, ajuste les regex de
   `src/content/instagram.js` (`RE.options`, `RE.block`, `RE.unblock`).
+- **Le scénario X s'appuie sur les `data-testid` publics** (`userActions`,
+  `block`, `unblock`, `confirmationSheetConfirm`, `toast`), stables depuis des
+  années, avec le texte visible en repli FR/EN. L'écran de profil **déjà
+  bloqué** a été relevé sur un compte réel : « @pseudo est bloqué » +
+  « Voir les posts », qui remplace le contenu. C'est le signal retenu en
+  priorité, avant le libellé du bouton du header — plus fiable, car il ne
+  dépend pas de la version de l'UI. Le titre seul ne suffit pas : la phrase
+  d'explication (« ne débloquera pas » / « won't unblock ») doit être là aussi,
+  sinon on continue le scénario normal. Si l'entrée « Bloquer » n'est pas
+  trouvée, le détail renvoyé au popup dit ce qui a été vu et la console (F12)
+  trace `[Blockwave:twitter]`.
+- X ne propose pas de pseudo avec un point : la contrainte de la base, plus
+  large, accepte aussi `a.b` — c'est volontaire, elle est commune aux trois
+  réseaux.
 - Seuls les profils à **pseudo** sont gérés (`facebook.com/nom`). Les pages
   `/profile.php?id=…`, sans pseudo public, sont rejetées à l'ajout.
 - Comptes privés : le menu « Options » / « … » reste accessible, le blocage
   fonctionne.
 - Le scroll de lecture suppose une fenêtre assez haute pour que le contenu
   défile ; sur une fenêtre très courte il ne fait rien, sans casser le flux.
+- **Après une mise à jour de l'extension, recharge-la** (`chrome://extensions`
+  → ↻). Le popup est relu du disque à chaque ouverture, pas le service worker :
+  sans rechargement, le popup peut connaître une plateforme que le worker
+  ignore encore. Depuis la 0.4.0, le popup le détecte et le dit explicitement
+  (« recharge l'extension ») au lieu d'accuser le pseudo saisi.

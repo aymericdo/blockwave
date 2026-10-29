@@ -143,6 +143,50 @@ button:disabled {
   color: var(--err);
 }
 
+/* ---------- progression ---------- */
+
+.progress {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+/* `display: flex` l'emporterait sur le `display: none` de [hidden] : sans cette
+   règle, la barre resterait visible au repos. */
+.progress[hidden] {
+  display: none;
+}
+
+.progress-track {
+  flex: 1;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  overflow: hidden;
+}
+
+.progress-fill {
+  width: 0;
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--accent), #6228d7);
+  transition: width 0.35s ease;
+}
+
+/* En pause, la barre garde sa largeur mais change de couleur : on voit d'un
+   coup d'œil que ce n'est pas un blocage en cours. */
+.progress[data-paused='true'] .progress-fill {
+  background: var(--warn);
+}
+
+.progress-label {
+  flex: none;
+  font-size: 10.5px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
 /* ---------- ajout manuel ---------- */
 
 .add {
